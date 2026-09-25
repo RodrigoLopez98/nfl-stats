@@ -3,14 +3,15 @@ import { ChevronDown, RefreshCw } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api, type BankrollLine, type Board, type GameCard, type Rankings, type Status } from "./api";
+import { TeamLogo } from "@/components/team-logo";
+import { api, type BankrollLine, type Board, type GameCard, type Rankings, type Side, type Status } from "./api";
 
 const emptyForm = {
   group_key: "parlay",
@@ -87,11 +88,14 @@ export default function App() {
     <div className="flex h-svh flex-col overflow-hidden bg-background">
       <header className="shrink-0 bg-primary text-primary-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-4 py-4">
-          <div>
-            <h1 className="text-4xl font-semibold tracking-wide">
-              NFL <span className="text-red-200">STATS</span>
-            </h1>
-            <p className="text-sm text-primary-foreground/80">Cartelera, proyección y bankroll. El teléfono solo llama a esta API.</p>
+          <div className="flex items-center gap-3">
+            <img src="/nfl-logo.png" alt="" className="h-16 w-auto shrink-0" />
+            <div>
+              <h1 className="text-4xl font-semibold tracking-wide">
+                NFL <span className="text-red-200">STATS</span>
+              </h1>
+              <p className="text-sm text-primary-foreground/80">Cartelera, proyección y bankroll. El teléfono solo llama a esta API.</p>
+            </div>
           </div>
           <Button
             className="bg-destructive text-white hover:bg-destructive/90"
@@ -176,6 +180,34 @@ export default function App() {
         </Tabs>
       </main>
     </div>
+  );
+}
+
+function MatchupTeam({ side, align = "start" }: { side: Side; align?: "start" | "end" }) {
+  const end = align === "end";
+  return (
+    <div className={`flex min-w-0 items-center gap-2.5 ${end ? "flex-row-reverse text-right" : ""}`}>
+      <TeamLogo abbr={side.abbr} name={side.name} className="size-11 sm:size-14" />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold tracking-wide sm:text-xl">
+          <span className="sm:hidden">{side.abbr}</span>
+          <span className="hidden sm:inline">{side.name}</span>
+        </p>
+        <p className="text-xs text-primary-foreground/70">
+          {record(side)}
+          <span className="hidden sm:inline"> · {side.ppg ?? "—"} pts</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TeamMark({ abbr, name, align = "start" }: { abbr: string; name: string; align?: "start" | "end" }) {
+  return (
+    <span className={`inline-flex items-center gap-2 font-semibold ${align === "end" ? "flex-row-reverse" : ""}`}>
+      <TeamLogo abbr={abbr} name={name} className="size-7" />
+      {abbr}
+    </span>
   );
 }
 
@@ -264,11 +296,13 @@ function GameEditor({
         aria-expanded={open}
         onClick={onToggle}
       >
-        <CardHeader className="flex flex-row items-center justify-between gap-3 rounded-none bg-primary text-primary-foreground">
-          <div>
-            <CardTitle className="text-2xl tracking-wide">
-              {game.away.name} @ {game.home.name}
-            </CardTitle>
+        <CardHeader className="flex flex-row items-center gap-3 rounded-none bg-primary text-primary-foreground">
+          <div className="grid min-w-0 flex-1 gap-2">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <MatchupTeam side={game.away} />
+              <span className="text-sm font-semibold tracking-widest text-primary-foreground/70">@</span>
+              <MatchupTeam side={game.home} align="end" />
+            </div>
             <CardDescription className="text-primary-foreground/75">
               {game.gameday || "Fecha por confirmar"}
               {game.confirmed ? " · confirmado" : ""}
@@ -292,22 +326,12 @@ function GameEditor({
             <p className="text-xl font-semibold text-primary">{game.winner_ranks}</p>
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-semibold">{game.away.abbr}</p>
-            <p className="text-sm text-muted-foreground">
-              {record(game.away)} · {game.away.ppg ?? "—"} pts
-            </p>
-          </div>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2.5">
+          <TeamMark abbr={game.away.abbr} name={game.away.name} />
           <Badge className={game.total_pick === "OVER" ? "bg-destructive text-white" : undefined}>
             {game.total_pick || "SIN LÍNEA"}
           </Badge>
-          <div className="text-right">
-            <p className="font-semibold">{game.home.abbr}</p>
-            <p className="text-sm text-muted-foreground">
-              {record(game.home)} · {game.home.ppg ?? "—"} pts
-            </p>
-          </div>
+          <TeamMark abbr={game.home.abbr} name={game.home.name} align="end" />
         </div>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <Stat label="Proyección" value={game.projected_total ?? "—"} />
@@ -360,8 +384,12 @@ function GameEditor({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Categoría</TableHead>
-                    <TableHead>{game.away.abbr}</TableHead>
-                    <TableHead>{game.home.abbr}</TableHead>
+                    <TableHead>
+                      <TeamMark abbr={game.away.abbr} name={game.away.name} />
+                    </TableHead>
+                    <TableHead>
+                      <TeamMark abbr={game.home.abbr} name={game.home.name} />
+                    </TableHead>
                     <TableHead>Mejor</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -421,7 +449,12 @@ function RankTable({ rankings }: { rankings: Rankings | null }) {
         <TableBody>
           {rankings.teams.map((team) => (
             <TableRow key={team.abbr}>
-              <TableCell>{team.name}</TableCell>
+              <TableCell>
+                <span className="inline-flex items-center gap-2.5">
+                  <TeamLogo abbr={team.abbr} name={team.name} className="size-8" />
+                  <span className="font-medium">{team.name}</span>
+                </span>
+              </TableCell>
               <TableCell>
                 {team.wins}-{team.losses}
               </TableCell>
