@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export default function App() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [openGameId, setOpenGameId] = useState<string | null>(null);
 
   async function load(nextSeason = season, nextWeek = week) {
     const info = await api.status(nextSeason);
@@ -83,8 +84,8 @@ export default function App() {
   const weeks = status?.weeks.length ? status.weeks : [week];
 
   return (
-    <div className="min-h-svh bg-background">
-      <header className="bg-primary text-primary-foreground">
+    <div className="flex h-svh flex-col overflow-hidden bg-background">
+      <header className="shrink-0 bg-primary text-primary-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-4 py-4">
           <div>
             <h1 className="text-4xl font-semibold tracking-wide">
@@ -139,29 +140,37 @@ export default function App() {
           </p>
         </div>
       </header>
-      <main className="mx-auto grid max-w-6xl gap-4 px-4 py-4">
-        {error && <div className="rounded-lg border-l-4 border-destructive bg-card px-4 py-3 text-sm">{error}</div>}
-        <Tabs defaultValue="tablero">
-          <TabsList>
+      <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-4">
+        {error && <div className="shrink-0 rounded-lg border-l-4 border-destructive bg-card px-4 py-3 text-sm">{error}</div>}
+        <Tabs defaultValue="tablero" className="min-h-0 flex-1">
+          <TabsList className="shrink-0">
             <TabsTrigger value="tablero">Tablero</TabsTrigger>
             <TabsTrigger value="rankings">Rankings</TabsTrigger>
             <TabsTrigger value="bankroll">Bankroll</TabsTrigger>
           </TabsList>
-          <TabsContent value="tablero" className="grid gap-3">
+          <TabsContent value="tablero" className="min-h-0 overflow-y-auto">
+            <div className="grid gap-3">
             {board?.games.length ? (
               board.games.map((game) => (
-                <GameEditor key={game.game_id} game={game} onSaved={() => load(season, week).catch((err: Error) => setError(err.message))} />
+                <GameEditor
+                  key={game.game_id}
+                  game={game}
+                  open={openGameId === game.game_id}
+                  onToggle={() => setOpenGameId((current) => (current === game.game_id ? null : game.game_id))}
+                  onSaved={() => load(season, week).catch((err: Error) => setError(err.message))}
+                />
               ))
             ) : (
               <p className="rounded-lg border-l-4 border-destructive bg-card px-4 py-3 text-sm">
                 No hay cartelera para esta semana. Sincroniza la temporada.
               </p>
             )}
+            </div>
           </TabsContent>
-          <TabsContent value="rankings">
+          <TabsContent value="rankings" className="min-h-0 overflow-y-auto">
             <RankTable rankings={rankings} />
           </TabsContent>
-          <TabsContent value="bankroll">
+          <TabsContent value="bankroll" className="min-h-0 overflow-y-auto">
             <Bankroll lines={bank} form={form} setForm={setForm} onChange={setBank} onError={setError} />
           </TabsContent>
         </Tabs>
@@ -178,7 +187,17 @@ function pct(value: number | null) {
   return value == null ? "—" : `${Math.round(value * 100)}%`;
 }
 
-function GameEditor({ game, onSaved }: { game: GameCard; onSaved: () => void }) {
+function GameEditor({
+  game,
+  open,
+  onToggle,
+  onSaved,
+}: {
+  game: GameCard;
+  open: boolean;
+  onToggle: () => void;
+  onSaved: () => void;
+}) {
   const [draft, setDraft] = useState({
     spread: game.spread ?? "",
     total: game.book_total ?? "",
@@ -238,16 +257,28 @@ function GameEditor({ game, onSaved }: { game: GameCard; onSaved: () => void }) 
   ];
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="bg-primary text-primary-foreground">
-        <CardTitle className="text-2xl tracking-wide">
-          {game.away.name} @ {game.home.name}
-        </CardTitle>
-        <CardDescription className="text-primary-foreground/75">
-          {game.gameday || "Fecha por confirmar"}
-          {game.confirmed ? " · confirmado" : ""}
-        </CardDescription>
-      </CardHeader>
+    <Card className="gap-0 overflow-hidden bg-primary py-0">
+      <button
+        type="button"
+        className="block w-full bg-primary text-left text-primary-foreground"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <CardHeader className="flex flex-row items-center justify-between gap-3 rounded-none bg-primary text-primary-foreground">
+          <div>
+            <CardTitle className="text-2xl tracking-wide">
+              {game.away.name} @ {game.home.name}
+            </CardTitle>
+            <CardDescription className="text-primary-foreground/75">
+              {game.gameday || "Fecha por confirmar"}
+              {game.confirmed ? " · confirmado" : ""}
+            </CardDescription>
+          </div>
+          <ChevronDown className={`size-5 shrink-0 transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`} />
+        </CardHeader>
+      </button>
+      <div className={`grid bg-card transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden bg-card">
       <CardContent className="grid gap-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -353,6 +384,8 @@ function GameEditor({ game, onSaved }: { game: GameCard; onSaved: () => void }) 
           </AccordionItem>
         </Accordion>
       </CardContent>
+        </div>
+      </div>
     </Card>
   );
 }
