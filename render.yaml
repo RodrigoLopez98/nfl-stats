@@ -1,0 +1,33 @@
+databases:
+  - name: nfl-db
+    plan: basic-256mb
+
+services:
+  - type: web
+    name: nfl-api
+    runtime: python
+    rootDir: back
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nfl-db
+          property: connectionString
+      - key: ENABLE_SCHEDULER
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+  - type: web
+    name: nfl-web
+    runtime: static
+    rootDir: front
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: nfl-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
