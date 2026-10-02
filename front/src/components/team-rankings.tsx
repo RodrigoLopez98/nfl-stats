@@ -113,13 +113,13 @@ export function TeamRankings({ rankings, season }: { rankings: Rankings | null; 
           const leader = leaderOf(teams, stat.key);
           const showLeader = leader && leader.abbr !== team.abbr;
           return (
-            <div key={stat.key} className="grid grid-cols-[1fr_auto_5.5rem] items-center gap-3 border-b border-primary/15 py-3 last:border-b-0">
+            <div key={stat.key} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-primary/15 py-3 last:border-b-0">
               <div>
                 <p className="text-xs font-semibold tracking-wide text-primary uppercase">{stat.label}</p>
                 {stat.unit && <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{stat.unit}</p>}
               </div>
-              <p className="font-industry text-4xl leading-none font-black italic tracking-tight text-foreground">{rank == null ? "—" : `${rank}.º`}</p>
-              <div className="text-right text-xs leading-5">
+              <p className="text-center font-industry text-4xl leading-none font-black italic tracking-tight text-destructive">{rank == null ? "—" : `${rank}TH`}</p>
+              <div className="justify-self-end text-right text-xs leading-5">
                 <p>
                   <span className="text-destructive">#{rank ?? "—"}</span> {team.abbr}{" "}
                   <span className="font-semibold text-foreground">{formatStat(team.totals?.[stat.key])}</span>
