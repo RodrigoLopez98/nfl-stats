@@ -21,7 +21,15 @@ RANK_CATEGORIES: list[tuple[str, str]] = [
     ("tackles", "Tackles"),
 ]
 
+SPECIAL_CATEGORIES: list[tuple[str, str]] = [
+    ("fg_made", "Goles de campo"),
+    ("punt_return_yards", "Retorno de punt"),
+    ("kickoff_return_yards", "Retorno de kickoff"),
+    ("special_teams_tds", "TD especiales"),
+]
+
 RANK_KEYS = [key for key, _label in RANK_CATEGORIES]
+SPECIAL_KEYS = [key for key, _label in SPECIAL_CATEGORIES]
 
 
 @dataclass(frozen=True)
@@ -76,7 +84,7 @@ def winner_by_record(away: Record, home: Record) -> str:
 
 def assign_ranks(per_game: dict[str, dict[str, float | None]]) -> dict[str, dict[str, int]]:
     ranks: dict[str, dict[str, int]] = {team: {} for team in per_game}
-    for key in RANK_KEYS:
+    for key in RANK_KEYS + SPECIAL_KEYS:
         series = []
         for team, values in per_game.items():
             raw = values.get(key)

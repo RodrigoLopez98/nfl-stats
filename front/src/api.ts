@@ -74,6 +74,7 @@ export type Rankings = {
     losses: number;
     ppg: number | null;
     ranks: Record<string, number | null>;
+    totals: Record<string, number>;
   }[];
 };
 

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TeamLogo } from "@/components/team-logo";
+import { TeamRankings } from "@/components/team-rankings";
 import { api, type BankrollLine, type Board, type GameCard, type Rankings, type Side, type Status } from "./api";
 
 const emptyForm = {
@@ -33,10 +34,11 @@ export default function App() {
   const [busy, setBusy] = useState("");
   const [openGameId, setOpenGameId] = useState<string | null>(null);
 
-  async function load(nextSeason = season, nextWeek = week) {
+  async function load(nextSeason = season, nextWeek = week, useLatestWeek = false) {
     const info = await api.status(nextSeason);
     setStatus(info);
-    const activeWeek = info.weeks.includes(nextWeek) ? nextWeek : info.suggested_week || info.weeks[0] || 1;
+    const activeWeek =
+      !useLatestWeek && info.weeks.includes(nextWeek) ? nextWeek : info.suggested_week || info.weeks[0] || 1;
     setWeek(activeWeek);
     const [slate, ranks, lines] = await Promise.all([
       api.board(nextSeason, activeWeek),
@@ -49,7 +51,27 @@ export default function App() {
   }
 
   useEffect(() => {
-    load().catch((err: Error) => setError(err.message));
+    let cancel = false;
+    (async () => {
+      setBusy("Actualizando el corte…");
+      setError("");
+      try {
+        await api.sync(season);
+      } catch (err) {
+        if (!cancel) setError(err instanceof Error ? err.message : "Falló la sincronización");
+      }
+      if (cancel) return;
+      try {
+        await load(season, week, true);
+      } catch (err) {
+        if (!cancel) setError(err instanceof Error ? err.message : "No se pudo cargar el corte");
+      } finally {
+        if (!cancel) setBusy("");
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
   }, []);
 
   async function changeSeason(value: number) {
@@ -86,15 +108,15 @@ export default function App() {
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background">
-      <header className="shrink-0 bg-primary text-primary-foreground">
+      <header className="shrink-0 border-b-2 border-primary bg-white text-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-4 py-4">
           <div className="flex items-center gap-3">
             <img src="/nfl-logo.png" alt="" className="h-16 w-auto shrink-0" />
             <div>
-              <h1 className="text-4xl font-semibold tracking-wide">
-                NFL <span className="text-red-200">STATS</span>
+              <h1 className="text-4xl font-semibold tracking-wide text-primary">
+                NFL <span className="text-destructive">STATS</span>
               </h1>
-              <p className="text-sm text-primary-foreground/80">Cartelera, proyección y bankroll. El teléfono solo llama a esta API.</p>
+              <p className="text-sm text-muted-foreground">Cartelera, proyección y bankroll. El teléfono solo llama a esta API.</p>
             </div>
           </div>
           <Button
@@ -108,9 +130,9 @@ export default function App() {
         </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-end gap-3 px-4 pb-4">
           <div className="grid gap-1">
-            <Label className="text-xs tracking-wide text-primary-foreground/80 uppercase">Temporada</Label>
+            <Label className="text-xs tracking-wide text-primary uppercase">Temporada</Label>
             <Select value={String(season)} onValueChange={(value) => changeSeason(Number(value))}>
-              <SelectTrigger className="w-36 border-white/20 bg-white/10 text-white">
+              <SelectTrigger className="w-36 border-primary/40 bg-white text-foreground">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -123,9 +145,9 @@ export default function App() {
             </Select>
           </div>
           <div className="grid gap-1">
-            <Label className="text-xs tracking-wide text-primary-foreground/80 uppercase">Semana</Label>
+            <Label className="text-xs tracking-wide text-primary uppercase">Semana</Label>
             <Select value={String(week)} onValueChange={(value) => changeWeek(Number(value))}>
-              <SelectTrigger className="w-40 border-white/20 bg-white/10 text-white">
+              <SelectTrigger className="w-40 border-primary/40 bg-white text-foreground">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -137,24 +159,27 @@ export default function App() {
               </SelectContent>
             </Select>
           </div>
-          <p className="pb-2 text-sm text-primary-foreground/80">
+          <p className="pb-2 text-sm text-muted-foreground">
             {status?.last_sync ? `Último sync: ${new Date(status.last_sync).toLocaleString()}` : "Sin sincronizar"}
             {" · "}
             {status?.games ?? 0} partidos · {status?.teams ?? 0} equipos
           </p>
         </div>
+        <div className="h-1 bg-destructive" />
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-4">
-        {error && <div className="shrink-0 rounded-lg border-l-4 border-destructive bg-card px-4 py-3 text-sm">{error}</div>}
+        {error && <div className="shrink-0 rounded-lg border-2 border-primary border-l-4 border-l-destructive bg-white px-4 py-3 text-sm">{error}</div>}
         <Tabs defaultValue="tablero" className="min-h-0 flex-1">
-          <TabsList className="shrink-0">
-            <TabsTrigger value="tablero">Tablero</TabsTrigger>
-            <TabsTrigger value="rankings">Rankings</TabsTrigger>
-            <TabsTrigger value="bankroll">Bankroll</TabsTrigger>
+          <TabsList variant="line" className="shrink-0 h-9 border-b border-primary/25 bg-transparent">
+            <TabsTrigger value="tablero" className="data-active:text-primary after:bg-destructive">Tablero</TabsTrigger>
+            <TabsTrigger value="rankings" className="data-active:text-primary after:bg-destructive">Rankings</TabsTrigger>
+            <TabsTrigger value="bankroll" className="data-active:text-primary after:bg-destructive">Bankroll</TabsTrigger>
           </TabsList>
           <TabsContent value="tablero" className="min-h-0 overflow-y-auto">
             <div className="grid gap-3">
-            {board?.games.length ? (
+            {busy && !board ? (
+              <p className="rounded-lg border-2 border-primary bg-white px-4 py-3 text-sm">Actualizando el corte de nfldata…</p>
+            ) : board?.games.length ? (
               board.games.map((game) => (
                 <GameEditor
                   key={game.game_id}
@@ -165,14 +190,14 @@ export default function App() {
                 />
               ))
             ) : (
-              <p className="rounded-lg border-l-4 border-destructive bg-card px-4 py-3 text-sm">
+              <p className="rounded-lg border-2 border-primary border-l-4 border-l-destructive bg-white px-4 py-3 text-sm">
                 No hay cartelera para esta semana. Sincroniza la temporada.
               </p>
             )}
             </div>
           </TabsContent>
           <TabsContent value="rankings" className="min-h-0 overflow-y-auto">
-            <RankTable rankings={rankings} />
+            <TeamRankings rankings={rankings} season={season} />
           </TabsContent>
           <TabsContent value="bankroll" className="min-h-0 overflow-y-auto">
             <Bankroll lines={bank} form={form} setForm={setForm} onChange={setBank} onError={setError} />
@@ -189,11 +214,11 @@ function MatchupTeam({ side, align = "start" }: { side: Side; align?: "start" | 
     <div className={`flex min-w-0 items-center gap-2.5 ${end ? "flex-row-reverse text-right" : ""}`}>
       <TeamLogo abbr={side.abbr} name={side.name} className="size-11 sm:size-14" />
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold tracking-wide sm:text-xl">
+        <p className="truncate text-sm font-semibold tracking-wide text-primary sm:text-xl">
           <span className="sm:hidden">{side.abbr}</span>
           <span className="hidden sm:inline">{side.name}</span>
         </p>
-        <p className="text-xs text-primary-foreground/70">
+        <p className="text-xs text-muted-foreground">
           {record(side)}
           <span className="hidden sm:inline"> · {side.ppg ?? "—"} pts</span>
         </p>
@@ -289,26 +314,26 @@ function GameEditor({
   ];
 
   return (
-    <Card className="gap-0 overflow-hidden bg-primary py-0">
+    <Card className="gap-0 overflow-hidden border-2 border-primary bg-white py-0 text-foreground ring-0">
       <button
         type="button"
-        className="block w-full bg-primary text-left text-primary-foreground"
+        className="block w-full bg-white text-left text-foreground"
         aria-expanded={open}
         onClick={onToggle}
       >
-        <CardHeader className="flex flex-row items-center gap-3 rounded-none bg-primary text-primary-foreground">
+        <CardHeader className="flex flex-row items-center gap-3 rounded-none bg-white text-foreground">
           <div className="grid min-w-0 flex-1 gap-2">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
               <MatchupTeam side={game.away} />
-              <span className="text-sm font-semibold tracking-widest text-primary-foreground/70">@</span>
+              <span className="text-sm font-semibold tracking-widest text-destructive">@</span>
               <MatchupTeam side={game.home} align="end" />
             </div>
-            <CardDescription className="text-primary-foreground/75">
+            <CardDescription className="text-muted-foreground">
               {game.gameday || "Fecha por confirmar"}
               {game.confirmed ? " · confirmado" : ""}
             </CardDescription>
           </div>
-          <ChevronDown className={`size-5 shrink-0 transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`} />
+          <ChevronDown className={`size-5 shrink-0 text-primary transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`} />
         </CardHeader>
       </button>
       <div className={`grid bg-card transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
@@ -420,52 +445,9 @@ function GameEditor({
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg bg-muted px-3 py-2">
+    <div className="rounded-lg border border-primary/30 bg-white px-3 py-2">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="text-lg font-semibold text-primary">{value}</p>
-    </div>
-  );
-}
-
-function RankTable({ rankings }: { rankings: Rankings | null }) {
-  if (!rankings?.teams.length) {
-    return <p className="text-sm text-muted-foreground">Los ranks aparecen después de sincronizar.</p>;
-  }
-  return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-primary hover:bg-primary">
-            <TableHead className="text-primary-foreground">Equipo</TableHead>
-            <TableHead className="text-primary-foreground">Récord</TableHead>
-            <TableHead className="text-primary-foreground">PPG</TableHead>
-            {rankings.categories.map((cat) => (
-              <TableHead key={cat.key} className="text-primary-foreground">
-                {cat.label}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rankings.teams.map((team) => (
-            <TableRow key={team.abbr}>
-              <TableCell>
-                <span className="inline-flex items-center gap-2.5">
-                  <TeamLogo abbr={team.abbr} name={team.name} className="size-8" />
-                  <span className="font-medium">{team.name}</span>
-                </span>
-              </TableCell>
-              <TableCell>
-                {team.wins}-{team.losses}
-              </TableCell>
-              <TableCell>{team.ppg ?? "—"}</TableCell>
-              {rankings.categories.map((cat) => (
-                <TableCell key={cat.key}>{team.ranks[cat.key] ?? "—"}</TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
     </div>
   );
 }
@@ -501,7 +483,7 @@ function Bankroll({
 
   return (
     <div className="grid gap-3">
-      <Card>
+      <Card className="border-2 border-primary ring-0">
         <CardContent>
           <form
             className="grid gap-3"
@@ -540,7 +522,7 @@ function Bankroll({
         </CardContent>
       </Card>
       {lines.map((line) => (
-        <Card key={line.id}>
+        <Card key={line.id} className="border-2 border-primary ring-0">
           <CardContent className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-semibold text-primary">{line.label || line.group_key}</p>

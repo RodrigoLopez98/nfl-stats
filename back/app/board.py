@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.engine import (
     RANK_CATEGORIES,
+    SPECIAL_CATEGORIES,
     PlayedGame,
     Record,
     assign_ranks,
@@ -108,6 +109,11 @@ def _snapshots(db: Session, season: int, before_week: int):
             "interceptions": _f(stat.interceptions) if stat else None,
             "forced_fumbles": _f(stat.forced_fumbles) if stat else None,
             "tackles": _f(stat.tackles) if stat else None,
+            "fg_made": _f(stat.fg_made) if stat else None,
+            "fg_att": _f(stat.fg_att) if stat else None,
+            "punt_return_yards": _f(stat.punt_return_yards) if stat else None,
+            "kickoff_return_yards": _f(stat.kickoff_return_yards) if stat else None,
+            "special_teams_tds": _f(stat.special_teams_tds) if stat else None,
         }
         totals[abbr] = {key: value for key, value in raw.items() if value is not None}
         per_game[abbr] = {
@@ -204,12 +210,43 @@ def build_board(db: Session, season: int, week: int) -> BoardOut:
     return BoardOut(season=season, week=week, games=cards)
 
 
+def _season_points(db: Session, season: int) -> dict[str, int]:
+    scored: dict[str, int] = defaultdict(int)
+    games = db.scalars(select(Game).where(Game.season == season, Game.game_type == "REG")).all()
+    for game in games:
+        if game.home_score is None or game.away_score is None:
+            continue
+        scored[game.home_team] += int(game.home_score)
+        scored[game.away_team] += int(game.away_score)
+    return scored
+
+
+def _rank_high(values: dict[str, int]) -> dict[str, int]:
+    series = sorted(values.items(), key=lambda item: item[1], reverse=True)
+    placed: dict[str, int] = {}
+    rank = 0
+    previous: int | None = None
+    for index, (team, value) in enumerate(series, start=1):
+        if previous is None or value != previous:
+            rank = index
+            previous = value
+        placed[team] = rank
+    return placed
+
+
 def build_rankings(db: Session, season: int, week: int) -> RankingsOut:
     played, wins, losses, _ties, points, _per, totals, ranks = _snapshots(db, season, week)
+    season_points = _season_points(db, season)
+    point_ranks = _rank_high(season_points)
     teams = []
-    for abbr in sorted(set(played) | set(ranks), key=lambda item: _team_name(item)):
+    for abbr in sorted(set(played) | set(ranks) | set(season_points), key=lambda item: _team_name(item)):
         counted = len(played[abbr])
         ppg = (points[abbr] / counted) if counted else None
+        row_totals = dict(totals.get(abbr, {}))
+        row_ranks = {key: ranks.get(abbr, {}).get(key) for key, _label in RANK_CATEGORIES + SPECIAL_CATEGORIES}
+        if abbr in season_points:
+            row_totals["points"] = float(season_points[abbr])
+            row_ranks["points"] = point_ranks[abbr]
         teams.append(
             RankRow(
                 abbr=abbr,
@@ -217,8 +254,8 @@ def build_rankings(db: Session, season: int, week: int) -> RankingsOut:
                 wins=wins[abbr],
                 losses=losses[abbr],
                 ppg=round(ppg, 2) if ppg is not None else None,
-                ranks={key: ranks.get(abbr, {}).get(key) for key, _label in RANK_CATEGORIES},
-                totals=totals.get(abbr, {}),
+                ranks=row_ranks,
+                totals=row_totals,
             )
         )
     return RankingsOut(

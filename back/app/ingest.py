@@ -138,6 +138,11 @@ def _upsert_stats(db: Session, season: int, rows: list[dict]) -> int:
         stat.interceptions = _num(row.get("def_interceptions")) or 0
         stat.forced_fumbles = _num(row.get("def_fumbles_forced")) or 0
         stat.tackles = solo + assists
+        stat.fg_made = _num(row.get("fg_made"))
+        stat.fg_att = _num(row.get("fg_att"))
+        stat.punt_return_yards = _num(row.get("punt_return_yards"))
+        stat.kickoff_return_yards = _num(row.get("kickoff_return_yards"))
+        stat.special_teams_tds = _num(row.get("special_teams_tds"))
         stat.synced_at = datetime.utcnow()
         count += 1
     return count

@@ -40,6 +40,11 @@ class TeamStat(Base):
     interceptions: Mapped[float] = mapped_column(Numeric(8, 1), default=0)
     forced_fumbles: Mapped[float] = mapped_column(Numeric(8, 1), default=0)
     tackles: Mapped[float] = mapped_column(Numeric(8, 1), default=0)
+    fg_made: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
+    fg_att: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
+    punt_return_yards: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
+    kickoff_return_yards: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
+    special_teams_tds: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
