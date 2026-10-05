@@ -24,11 +24,13 @@ from app.schemas import (
     BankrollLineOut,
     BoardOut,
     CategoryOut,
+    DashboardOut,
     GameOut,
     RankRow,
     RankingsOut,
     SideOut,
     StatusOut,
+    WeekBundleOut,
 )
 from app.teams import TEAMS
 
@@ -144,8 +146,25 @@ def _side(abbr: str, wins, losses, ties, points, played, ranks, line: float | No
     )
 
 
-def build_board(db: Session, season: int, week: int) -> BoardOut:
-    played, wins, losses, ties, points, _per, _totals, ranks = _snapshots(db, season, week)
+Snapshot = tuple[
+    dict[str, list],
+    dict[str, int],
+    dict[str, int],
+    dict[str, int],
+    dict[str, int],
+    dict[str, dict[str, float | None]],
+    dict[str, dict[str, float]],
+    dict[str, dict[str, int | None]],
+]
+
+
+def _build_board_from_snapshot(
+    db: Session,
+    season: int,
+    week: int,
+    snap: Snapshot,
+) -> BoardOut:
+    played, wins, losses, ties, points, _per, _totals, ranks = snap
     slate_games = db.scalars(
         select(Game)
         .where(Game.season == season, Game.week == week, Game.game_type == "REG")
@@ -214,8 +233,12 @@ def build_board(db: Session, season: int, week: int) -> BoardOut:
     return BoardOut(season=season, week=week, games=cards)
 
 
-def build_rankings(db: Session, season: int, week: int) -> RankingsOut:
-    played, wins, losses, _ties, points, _per, totals, ranks = _snapshots(db, season, week)
+def build_board(db: Session, season: int, week: int) -> BoardOut:
+    return _build_board_from_snapshot(db, season, week, _snapshots(db, season, week))
+
+
+def _build_rankings_from_snapshot(season: int, week: int, snap: Snapshot) -> RankingsOut:
+    played, wins, losses, _ties, points, _per, totals, ranks = snap
     teams = []
     for abbr in sorted(set(played) | set(ranks), key=lambda item: _team_name(item)):
         counted = len(played[abbr])
@@ -239,6 +262,44 @@ def build_rankings(db: Session, season: int, week: int) -> RankingsOut:
         categories=[{"key": key, "label": label} for key, label in RANK_CATEGORIES],
         teams=teams,
     )
+
+
+def build_rankings(db: Session, season: int, week: int) -> RankingsOut:
+    return _build_rankings_from_snapshot(season, week, _snapshots(db, season, week))
+
+
+def build_week_bundle(db: Session, season: int, week: int) -> tuple[BoardOut, RankingsOut]:
+    snap = _snapshots(db, season, week)
+    board = _build_board_from_snapshot(db, season, week, snap)
+    rankings = _build_rankings_from_snapshot(season, week, snap)
+    return board, rankings
+
+
+def resolve_week(status_out: StatusOut, week: int | None) -> int | None:
+    if week is not None and week in status_out.weeks:
+        return week
+    return status_out.suggested_week or (status_out.weeks[0] if status_out.weeks else None)
+
+
+def build_dashboard(db: Session, season: int, week: int | None = None) -> DashboardOut:
+    status_out = status(db, season)
+    active_week = resolve_week(status_out, week)
+    if active_week is None:
+        empty_board = BoardOut(season=season, week=0, games=[])
+        empty_rankings = RankingsOut(
+            season=season,
+            week=0,
+            categories=[{"key": key, "label": label} for key, label in RANK_CATEGORIES],
+            teams=[],
+        )
+        return DashboardOut(status=status_out, board=empty_board, rankings=empty_rankings)
+    board, rankings = build_week_bundle(db, season, active_week)
+    return DashboardOut(status=status_out, board=board, rankings=rankings)
+
+
+def week_bundle(db: Session, season: int, week: int) -> WeekBundleOut:
+    board, rankings = build_week_bundle(db, season, week)
+    return WeekBundleOut(board=board, rankings=rankings)
 
 
 def status(db: Session, season: int) -> StatusOut:

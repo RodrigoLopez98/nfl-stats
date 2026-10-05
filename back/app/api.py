@@ -2,11 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.board import bankroll_view, build_board, build_rankings, default_season, status, suggest_week
+from app.board import (
+    bankroll_view,
+    build_board,
+    build_dashboard,
+    build_rankings,
+    default_season,
+    status,
+    suggest_week,
+    week_bundle,
+)
 from app.database import get_db
 from app.ingest import sync_season
 from app.models import BankrollLine, Game, SlateEntry
-from app.schemas import BankrollIn, BankrollLineOut, BoardOut, RankingsOut, SlateIn, StatusOut
+from app.schemas import BankrollIn, BankrollLineOut, BoardOut, DashboardOut, RankingsOut, SlateIn, StatusOut, WeekBundleOut
 
 router = APIRouter(prefix="/api")
 
@@ -19,6 +28,16 @@ def health():
 @router.get("/status", response_model=StatusOut)
 def get_status(season: int | None = None, db: Session = Depends(get_db)):
     return status(db, season or default_season())
+
+
+@router.get("/dashboard", response_model=DashboardOut)
+def get_dashboard(season: int | None = None, week: int | None = None, db: Session = Depends(get_db)):
+    return build_dashboard(db, season or default_season(), week)
+
+
+@router.get("/week", response_model=WeekBundleOut)
+def get_week_bundle(season: int | None = None, week: int = 1, db: Session = Depends(get_db)):
+    return week_bundle(db, season or default_season(), week)
 
 
 @router.get("/board", response_model=BoardOut)

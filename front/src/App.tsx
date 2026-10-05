@@ -36,34 +36,22 @@ export default function App() {
   const [busy, setBusy] = useState("");
   const [openGameId, setOpenGameId] = useState<string | null>(null);
   const [tab, setTab] = useState<AppTab>("scores");
+  const [bankLoaded, setBankLoaded] = useState(false);
 
   async function load(nextSeason = season, nextWeek = week, useLatestWeek = false) {
-    const info = await api.status(nextSeason);
-    setStatus(info);
-    const activeWeek =
-      !useLatestWeek && info.weeks.includes(nextWeek) ? nextWeek : info.suggested_week || info.weeks[0] || 1;
+    const dash = await api.dashboard(nextSeason, useLatestWeek ? undefined : nextWeek);
+    setStatus(dash.status);
+    const activeWeek = dash.board.week || dash.status.suggested_week || dash.status.weeks[0] || 1;
     setWeek(activeWeek);
-    const [slate, ranks, lines] = await Promise.all([
-      api.board(nextSeason, activeWeek),
-      api.rankings(nextSeason, activeWeek),
-      api.bankroll(),
-    ]);
-    setBoard(slate);
-    setRankings(ranks);
-    setBank(lines);
+    setBoard(dash.board);
+    setRankings(dash.rankings);
   }
 
   useEffect(() => {
     let cancel = false;
     (async () => {
-      setBusy("Actualizando el corte…");
+      setBusy("Cargando…");
       setError("");
-      try {
-        await api.sync(season);
-      } catch (err) {
-        if (!cancel) setError(err instanceof Error ? err.message : "Falló la sincronización");
-      }
-      if (cancel) return;
       try {
         await load(season, week, true);
       } catch (err) {
@@ -77,13 +65,32 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (tab !== "bankroll" || bankLoaded) return;
+    let cancel = false;
+    api
+      .bankroll()
+      .then((lines) => {
+        if (!cancel) {
+          setBank(lines);
+          setBankLoaded(true);
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancel) setError(err.message);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [tab, bankLoaded]);
+
   async function changeWeek(value: number) {
     if (!Number.isFinite(value) || value === week) return;
     setWeek(value);
     setError("");
-    const [slate, ranks] = await Promise.all([api.board(season, value), api.rankings(season, value)]);
-    setBoard(slate);
-    setRankings(ranks);
+    const bundle = await api.week(season, value);
+    setBoard(bundle.board);
+    setRankings(bundle.rankings);
   }
 
   async function sync() {

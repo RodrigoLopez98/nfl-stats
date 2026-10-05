@@ -112,6 +112,8 @@ def enrich_scores_from_espn(db: Session, season: int) -> int:
                 _register_lookup(lookup, away_abbr, away_score, home_abbr, home_score)
 
             for game in day_games:
+                if game.home_score is not None and game.away_score is not None:
+                    continue
                 scores = _lookup_scores(lookup, game.away_team, game.home_team)
                 if not scores:
                     continue

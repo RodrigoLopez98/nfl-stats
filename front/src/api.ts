@@ -78,6 +78,14 @@ export type Rankings = {
   }[];
 };
 
+export type Dashboard = {
+  status: Status;
+  board: Board;
+  rankings: Rankings;
+};
+
+export type WeekBundle = { board: Board; rankings: Rankings };
+
 export type BankrollLine = {
   id: number;
   group_key: string;
@@ -104,6 +112,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: (season: number) => request<Status>(`/api/status?season=${season}`),
+  dashboard: (season: number, week?: number) =>
+    request<Dashboard>(
+      `/api/dashboard?season=${season}${week != null ? `&week=${week}` : ""}`,
+    ),
+  week: (season: number, week: number) => request<WeekBundle>(`/api/week?season=${season}&week=${week}`),
   board: (season: number, week: number) => request<Board>(`/api/board?season=${season}&week=${week}`),
   rankings: (season: number, week: number) => request<Rankings>(`/api/rankings?season=${season}&week=${week}`),
   saveSlate: (gameId: string, body: Record<string, unknown>) =>

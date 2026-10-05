@@ -121,3 +121,14 @@ class StatusOut(BaseModel):
     last_sync: datetime | None
     games: int
     teams: int
+
+
+class WeekBundleOut(BaseModel):
+    board: BoardOut
+    rankings: RankingsOut
+
+
+class DashboardOut(BaseModel):
+    status: StatusOut
+    board: BoardOut
+    rankings: RankingsOut
