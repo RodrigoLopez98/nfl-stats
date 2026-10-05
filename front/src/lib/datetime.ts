@@ -69,3 +69,36 @@ export function formatCalendarDate(
 ) {
   return new Intl.DateTimeFormat(locale, { timeZone: APP_TIME_ZONE, ...options }).format(date);
 }
+
+/** Convierte hora local en Monterrey (24h) a timestamp UTC. */
+export function wallTimeInMonterreyToUtcMs(ymd: string, hour24: number, minute: number) {
+  const [y, mo, d] = ymd.split("-").map(Number);
+  if (!y || !mo || !d) return Number.NaN;
+  const anchor = parseCalendarDate(ymd)?.getTime() ?? Date.UTC(y, mo - 1, d, 12, 0, 0);
+  for (let delta = -40 * 60 * 60 * 1000; delta <= 40 * 60 * 60 * 1000; delta += 60 * 1000) {
+    const candidate = anchor + delta;
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: APP_TIME_ZONE,
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        hour12: false,
+      })
+        .formatToParts(new Date(candidate))
+        .map((part) => [part.type, part.value]),
+    );
+    if (
+      Number(parts.year) === y &&
+      Number(parts.month) === mo &&
+      Number(parts.day) === d &&
+      Number(parts.hour) === hour24 &&
+      Number(parts.minute) === minute
+    ) {
+      return candidate;
+    }
+  }
+  return anchor;
+}

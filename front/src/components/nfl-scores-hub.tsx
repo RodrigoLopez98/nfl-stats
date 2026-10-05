@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Board, GameCard, Rankings } from "@/api";
 import { TeamLogo } from "@/components/team-logo";
-import { todayInMonterrey } from "@/lib/datetime";
 import { normalizeTeamAbbr, teamAccent, teamNickname } from "@/lib/team-meta";
 import {
   broadcastEventTitle,
@@ -13,7 +12,8 @@ import {
   kickoffLabel,
   parseGameday,
   recordLabel,
-  sortGamesByGameday,
+  sortCompletedGames,
+  sortUpcomingGames,
   weekDateRangeLabel,
   winPct,
 } from "@/lib/scores-format";
@@ -33,6 +33,7 @@ function ScoreTeamRow({
   ties,
   score,
   winner,
+  final,
 }: {
   abbr: string;
   wins: number;
@@ -40,13 +41,19 @@ function ScoreTeamRow({
   ties: number;
   score?: number | null;
   winner?: boolean;
+  final?: boolean;
 }) {
   const code = normalizeTeamAbbr(abbr);
+  const dim = final && !winner;
   return (
     <div className="flex items-center gap-3 border-b border-white/10 px-3 py-3 last:border-b-0">
       <span className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: teamAccent(code) }} />
       <TeamLogo abbr={code} name={teamNickname(code)} className="size-9" />
-      <p className="font-industry flex-1 text-lg font-black italic tracking-wide text-white uppercase">
+      <p
+        className={`font-industry flex-1 text-lg italic tracking-wide uppercase ${
+          winner ? "font-black text-white" : dim ? "font-bold text-white/40" : "font-black text-white"
+        }`}
+      >
         {teamNickname(code)}
       </p>
       <div className="flex items-center gap-1.5">
@@ -56,7 +63,11 @@ function ScoreTeamRow({
             aria-hidden
           />
         )}
-        <span className="min-w-[2rem] text-right text-lg font-semibold text-white tabular-nums">
+        <span
+          className={`min-w-[2rem] text-right text-lg tabular-nums ${
+            winner ? "font-bold text-white" : dim ? "font-medium text-white/40" : "font-semibold text-white"
+          }`}
+        >
           {score != null ? score : recordLabel(wins, losses, ties)}
         </span>
       </div>
@@ -66,8 +77,9 @@ function ScoreTeamRow({
 
 function ScoreGameCard({ game }: { game: GameCard }) {
   const final = isFinal(game);
-  const awayWins = final && (game.away_score ?? 0) > (game.home_score ?? 0);
-  const homeWins = final && (game.home_score ?? 0) > (game.away_score ?? 0);
+  const isTie = final && game.away_score === game.home_score;
+  const awayWins = final && !isTie && (game.away_score ?? 0) > (game.home_score ?? 0);
+  const homeWins = final && !isTie && (game.home_score ?? 0) > (game.away_score ?? 0);
   const day = parseGameday(game.gameday);
 
   return (
@@ -79,6 +91,7 @@ function ScoreGameCard({ game }: { game: GameCard }) {
         ties={game.away.ties}
         score={final ? game.away_score : null}
         winner={awayWins}
+        final={final}
       />
       <ScoreTeamRow
         abbr={game.home.abbr}
@@ -87,6 +100,7 @@ function ScoreGameCard({ game }: { game: GameCard }) {
         ties={game.home.ties}
         score={final ? game.home_score : null}
         winner={homeWins}
+        final={final}
       />
       <div className="border-t border-white/10 px-3 py-2 text-center text-sm text-white/80">
         {final && day ? (
@@ -121,67 +135,41 @@ function EventHeader({ date }: { date: Date }) {
   );
 }
 
+function renderScoreSections(sorted: GameCard[], sectionKey: string) {
+  let lastDay = "";
+  return sorted.flatMap((game) => {
+    const dayKey = game.gameday ?? "unknown";
+    const blocks: ReactNode[] = [];
+    if (dayKey !== lastDay) {
+      lastDay = dayKey;
+      const date = parseGameday(dayKey);
+      if (date) blocks.push(<EventHeader key={`${sectionKey}-hdr-${dayKey}`} date={date} />);
+    }
+    blocks.push(<ScoreGameCard key={`${sectionKey}-${game.game_id}`} game={game} />);
+    return blocks;
+  });
+}
+
 function ScoresPanel({ games, week }: { games: GameCard[]; week: number }) {
-  const { upcomingGroups, completedGroups } = useMemo(() => {
-    const today = todayInMonterrey()?.getTime() ?? 0;
-    const upcomingRaw = games.filter((game) => !isFinal(game));
-    const upcoming = sortGamesByGameday(upcomingRaw, "asc").sort((a, b) => {
-      const ta = parseGameday(a.gameday)?.getTime() ?? Number.POSITIVE_INFINITY;
-      const tb = parseGameday(b.gameday)?.getTime() ?? Number.POSITIVE_INFINITY;
-      const aFuture = ta >= today ? 0 : 1;
-      const bFuture = tb >= today ? 0 : 1;
-      if (aFuture !== bFuture) return aFuture - bFuture;
-      return ta - tb;
-    });
-    const completed = sortGamesByGameday(
-      games.filter((game) => isFinal(game)),
-      "desc",
-    );
-    return {
-      upcomingGroups: groupGamesByDay(upcoming, "asc"),
-      completedGroups: groupGamesByDay(completed, "desc"),
-    };
+  const { upcoming, completed } = useMemo(() => {
+    const upcomingList = sortUpcomingGames(games.filter((game) => !isFinal(game)));
+    const completedList = sortCompletedGames(games.filter((game) => isFinal(game)));
+    return { upcoming: upcomingList, completed: completedList };
   }, [games]);
 
   return (
     <div className="grid gap-2">
-      {!!upcomingGroups.length && (
+      {!!upcoming.length && (
         <section>
           <h2 className="text-xl font-semibold text-white">Upcoming Games</h2>
-          {upcomingGroups.map(([dayKey, dayGames]) => {
-            const date = parseGameday(dayKey);
-            if (!date) return null;
-            return (
-              <div key={`up-${dayKey}`}>
-                <EventHeader date={date} />
-                <div className="grid gap-3">
-                  {dayGames.map((game) => (
-                    <ScoreGameCard key={game.game_id} game={game} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          <div className="grid gap-3">{renderScoreSections(upcoming, "up")}</div>
         </section>
       )}
 
-      {!!completedGroups.length && (
-        <section className={upcomingGroups.length ? "mt-4" : ""}>
+      {!!completed.length && (
+        <section className={upcoming.length ? "mt-4" : ""}>
           <h2 className="text-xl font-semibold text-white">Completed Games</h2>
-          {completedGroups.map(([dayKey, dayGames]) => {
-            const date = parseGameday(dayKey);
-            if (!date) return null;
-            return (
-              <div key={`done-${dayKey}`}>
-                <EventHeader date={date} />
-                <div className="grid gap-3">
-                  {dayGames.map((game) => (
-                    <ScoreGameCard key={game.game_id} game={game} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          <div className="grid gap-3">{renderScoreSections(completed, "done")}</div>
         </section>
       )}
 

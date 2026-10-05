@@ -4,6 +4,7 @@ import {
   calendarWeekday,
   formatCalendarDate,
   parseCalendarDate,
+  wallTimeInMonterreyToUtcMs,
 } from "@/lib/datetime";
 
 export function parseGameday(value: string | null | undefined) {
@@ -35,6 +36,56 @@ export function weekDateRangeLabel(games: GameCard[]) {
 
 export function isFinal(game: GameCard) {
   return game.away_score != null && game.home_score != null;
+}
+
+function parseKickoffLabel(label: string) {
+  if (label === "TBD") return { hour: 23, minute: 59 };
+  const match = label.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
+  if (!match) return { hour: 12, minute: 0 };
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3].toLowerCase();
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  return { hour, minute };
+}
+
+/** Instantánea del kickoff en Monterrey (ms UTC). */
+export function gameKickoffMs(game: GameCard) {
+  const ymd = game.gameday?.slice(0, 10);
+  if (!ymd) return Number.POSITIVE_INFINITY;
+  const { hour, minute } = parseKickoffLabel(kickoffLabel(game));
+  const ms = wallTimeInMonterreyToUtcMs(ymd, hour, minute);
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+export function sortUpcomingGames(games: GameCard[], now = new Date()) {
+  const nowMs = now.getTime();
+  return [...games].sort((a, b) => {
+    const ka = gameKickoffMs(a);
+    const kb = gameKickoffMs(b);
+    const aFuture = ka >= nowMs;
+    const bFuture = kb >= nowMs;
+    if (aFuture !== bFuture) return aFuture ? -1 : 1;
+    return ka - kb;
+  });
+}
+
+export function sortCompletedGames(games: GameCard[]) {
+  return [...games].sort((a, b) => gameKickoffMs(b) - gameKickoffMs(a));
+}
+
+export function groupGamesPreservingOrder(games: GameCard[]) {
+  const map = new Map<string, GameCard[]>();
+  const order: string[] = [];
+  for (const game of games) {
+    const key = game.gameday ?? "unknown";
+    if (!map.has(key)) order.push(key);
+    const bucket = map.get(key) ?? [];
+    bucket.push(game);
+    map.set(key, bucket);
+  }
+  return order.map((key) => [key, map.get(key)!] as const);
 }
 
 export function broadcastEventTitle(date: Date) {
