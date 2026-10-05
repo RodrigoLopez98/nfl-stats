@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Board, GameCard, Rankings } from "@/api";
 import { TeamLogo } from "@/components/team-logo";
+import { calendarWeekday } from "@/lib/datetime";
 import { normalizeTeamAbbr, teamAccent, teamNickname } from "@/lib/team-meta";
 import {
   broadcastEventTitle,
@@ -135,7 +136,7 @@ function ScoresPanel({ games, week }: { games: GameCard[]; week: number }) {
         if (!isFinal(game)) return false;
         const date = parseGameday(game.gameday);
         if (!date) return false;
-        const day = date.getDay();
+        const day = calendarWeekday(date);
         return day === 4 || day === 1;
       }),
     [games],
@@ -147,7 +148,7 @@ function ScoresPanel({ games, week }: { games: GameCard[]; week: number }) {
           if (!isFinal(game)) return false;
           const date = parseGameday(game.gameday);
           if (!date) return false;
-          const day = date.getDay();
+          const day = calendarWeekday(date);
           return day !== 4 && day !== 1;
         }),
       ),

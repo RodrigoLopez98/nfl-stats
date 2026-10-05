@@ -1,5 +1,6 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -33,7 +34,8 @@ from app.teams import TEAMS
 
 
 def default_season(today: date | None = None) -> int:
-    today = today or date.today()
+    if today is None:
+        today = datetime.now(ZoneInfo("America/Monterrey")).date()
     return today.year if today.month >= 3 else today.year - 1
 
 

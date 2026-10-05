@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import router, scheduled_sync
 from app.config import settings
 
-scheduler = BackgroundScheduler(timezone="America/Chicago")
+scheduler = BackgroundScheduler(timezone="America/Monterrey")
 
 
 @asynccontextmanager

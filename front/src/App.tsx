@@ -13,12 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TeamLogo } from "@/components/team-logo";
 import { TeamRankings } from "@/components/team-rankings";
 import { NflScoresHub } from "@/components/nfl-scores-hub";
+import { formatDateTimeMonterrey, currentNflSeason } from "@/lib/datetime";
 import { api, type BankrollLine, type Board, type GameCard, type Rankings, type Side, type Status } from "./api";
-
-/** Temporada NFL en curso (marzo en adelante = año calendario). */
-function currentNflSeason(reference = new Date()) {
-  return reference.getMonth() >= 2 ? reference.getFullYear() : reference.getFullYear() - 1;
-}
 
 const emptyForm = {
   group_key: "parlay",
@@ -144,7 +140,7 @@ export default function App() {
             </Select>
           </div>
           <p className="pb-2 text-sm text-muted-foreground">
-            {status?.last_sync ? `Último sync: ${new Date(status.last_sync).toLocaleString()}` : "Sin sincronizar"}
+            {status?.last_sync ? `Último sync: ${formatDateTimeMonterrey(status.last_sync)}` : "Sin sincronizar"}
             {" · "}
             {status?.games ?? 0} partidos · {status?.teams ?? 0} equipos
           </p>

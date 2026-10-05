@@ -1,20 +1,24 @@
 import type { GameCard } from "@/api";
 
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+import {
+  calendarWeekday,
+  formatCalendarDate,
+  parseCalendarDate,
+} from "@/lib/datetime";
 
 export function parseGameday(value: string | null | undefined) {
   if (!value) return null;
-  const [y, m, d] = value.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
+  return parseCalendarDate(value.slice(0, 10));
 }
 
 export function formatShortDate(date: Date) {
-  return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  const month = formatCalendarDate(date, { month: "short" }).replace(/\./g, "").toUpperCase();
+  const day = formatCalendarDate(date, { day: "numeric" });
+  return `${month} ${day}`;
 }
 
 export function formatLongWeekdayDate(date: Date) {
-  return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  return formatCalendarDate(date, { weekday: "long", month: "long", day: "numeric" });
 }
 
 export function weekDateRangeLabel(games: GameCard[]) {
@@ -34,7 +38,7 @@ export function isFinal(game: GameCard) {
 }
 
 export function broadcastEventTitle(date: Date) {
-  const day = date.getDay();
+  const day = calendarWeekday(date);
   if (day === 4) return "Thursday Night Football";
   if (day === 1) return "Monday Night Football";
   if (day === 0) return "Sunday Night Football";
@@ -44,7 +48,7 @@ export function broadcastEventTitle(date: Date) {
 export function kickoffLabel(game: GameCard) {
   const date = parseGameday(game.gameday);
   if (!date) return "TBD";
-  const day = date.getDay();
+  const day = calendarWeekday(date);
   if (day === 4) return "8:15pm";
   if (day === 1) return "8:15pm";
   if (day === 0) return "1:00pm";
