@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Game, SyncLog, TeamStat
+from app.espn_scores import enrich_scores_from_espn
 
 
 def _num(value) -> float | None:
@@ -54,15 +55,18 @@ def sync_season(db: Session, season: int) -> dict:
     db.flush()
     try:
         with httpx.Client(base_url=settings.nfl_api_base, timeout=60.0) as client:
-            games = fetch_all(client, "/v1/games", {"season": season})
+            games = fetch_all(client, "/v1/games/scoring", {"season": season})
+            if not games:
+                games = fetch_all(client, "/v1/games", {"season": season})
             stats = fetch_all(client, "/v1/stats/team", {"season": season})
         stats = _prefer_regular(stats)
         games_upserted = _upsert_games(db, games)
+        scores_enriched = enrich_scores_from_espn(db, season)
         teams_upserted = _upsert_stats(db, season, stats)
         log.games_upserted = games_upserted
         log.teams_upserted = teams_upserted
         log.ok = True
-        log.message = "ok"
+        log.message = f"ok espn_scores={scores_enriched}"
         log.finished_at = datetime.utcnow()
         db.commit()
         return {
@@ -70,6 +74,7 @@ def sync_season(db: Session, season: int) -> dict:
             "season": season,
             "games": games_upserted,
             "teams": teams_upserted,
+            "espn_scores": scores_enriched,
         }
     except Exception as exc:
         db.rollback()
