@@ -77,7 +77,7 @@ export function TeamRankings({ rankings, season }: { rankings: Rankings | null; 
             setView("detail");
           }}
         />
-        <p className="mt-3 text-sm text-muted-foreground">Los ranks aparecen después de sincronizar.</p>
+        <p className="mt-3 text-sm text-white/55">Los ranks aparecen después de sincronizar.</p>
       </div>
     );
   }
@@ -111,28 +111,26 @@ export function TeamRankings({ rankings, season }: { rankings: Rankings | null; 
           type="button"
           variant="ghost"
           size="sm"
-          className="shrink-0 text-primary"
+          className="shrink-0 text-white/80 hover:bg-white/10 hover:text-white"
           onClick={() => setView("pick")}
         >
           <ChevronLeft className="size-4" />
           Equipos
         </Button>
         <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-          <p className="truncate text-lg font-semibold tracking-wide text-primary">{displayName}</p>
+          <p className="truncate text-lg font-semibold tracking-wide text-white">{displayName}</p>
           <TeamLogo abbr={abbr} name={displayName} className="size-10" />
         </div>
       </div>
-      <h2 className="text-xl font-semibold tracking-wide text-foreground">{season} Rankings</h2>
-      {!team && (
-        <p className="text-sm text-muted-foreground">Sin datos de ranking para este equipo todavía.</p>
-      )}
-      <div className="grid grid-cols-3 border-b border-primary/20">
+      <h2 className="font-industry text-xl font-black italic tracking-wide text-white uppercase">{season} Rankings</h2>
+      {!team && <p className="text-sm text-white/55">Sin datos de ranking para este equipo todavía.</p>}
+      <div className="grid grid-cols-3 border-b border-white/15">
         {GROUPS.map((item) => (
           <button
             key={item.id}
             type="button"
             className={`pb-2 text-center text-sm font-semibold tracking-wide uppercase ${
-              item.id === group ? "border-b-2 border-destructive text-primary" : "text-muted-foreground"
+              item.id === group ? "border-b-2 border-white text-white" : "text-white/45"
             }`}
             onClick={() => setGroup(item.id)}
           >
@@ -140,11 +138,11 @@ export function TeamRankings({ rankings, season }: { rankings: Rankings | null; 
           </button>
         ))}
       </div>
-      <div className="rounded-xl border-2 border-primary bg-white px-4">
+      <div className="rounded-xl border border-white/10 bg-[#242731] px-4">
         {!team ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Sincroniza la temporada para ver estadísticas.</p>
+          <p className="py-6 text-center text-sm text-white/55">Sincroniza la temporada para ver estadísticas.</p>
         ) : specialMissing ? (
-          <p className="py-4 text-sm text-muted-foreground">Sincroniza la temporada para cargar equipos especiales.</p>
+          <p className="py-4 text-sm text-white/55">Sincroniza la temporada para cargar equipos especiales.</p>
         ) : (
           active.stats.map((stat) => {
             const rank = team.ranks[stat.key];
@@ -153,24 +151,24 @@ export function TeamRankings({ rankings, season }: { rankings: Rankings | null; 
             return (
               <div
                 key={stat.key}
-                className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-primary/15 py-3 last:border-b-0"
+                className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-white/10 py-3 last:border-b-0"
               >
                 <div>
-                  <p className="text-xs font-semibold tracking-wide text-primary uppercase">{stat.label}</p>
-                  {stat.unit && <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{stat.unit}</p>}
+                  <p className="text-xs font-semibold tracking-wide text-white/70 uppercase">{stat.label}</p>
+                  {stat.unit && <p className="text-[10px] tracking-wide text-white/45 uppercase">{stat.unit}</p>}
                 </div>
                 <p className="text-center font-industry text-4xl leading-none font-black italic tracking-tight text-destructive">
                   {rank == null ? "—" : `${rank}TH`}
                 </p>
-                <div className="justify-self-end text-right text-xs leading-5">
+                <div className="justify-self-end text-right text-xs leading-5 text-white/80">
                   <p>
                     <span className="text-destructive">#{rank ?? "—"}</span> {team.abbr}{" "}
-                    <span className="font-semibold text-foreground">{formatStat(team.totals?.[stat.key])}</span>
+                    <span className="font-semibold text-white">{formatStat(team.totals?.[stat.key])}</span>
                   </p>
                   {showLeader && (
-                    <p className="text-muted-foreground">
-                      <span className="text-primary">#1</span> {leader.abbr}{" "}
-                      <span className="font-semibold text-foreground">{formatStat(leader.totals?.[stat.key])}</span>
+                    <p className="text-white/55">
+                      <span className="text-white">#1</span> {leader.abbr}{" "}
+                      <span className="font-semibold text-white">{formatStat(leader.totals?.[stat.key])}</span>
                     </p>
                   )}
                 </div>

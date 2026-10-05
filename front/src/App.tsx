@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,13 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AppShell, WeekToolbar, type AppTab } from "@/components/app-shell";
 import { TeamLogo } from "@/components/team-logo";
 import { TeamRankings } from "@/components/team-rankings";
 import { NflScoresHub } from "@/components/nfl-scores-hub";
 import { formatDateTimeMonterrey, currentNflSeason } from "@/lib/datetime";
+import { teamNickname } from "@/lib/team-meta";
 import { api, type BankrollLine, type Board, type GameCard, type Rankings, type Side, type Status } from "./api";
 
 const emptyForm = {
@@ -35,6 +35,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [openGameId, setOpenGameId] = useState<string | null>(null);
+  const [tab, setTab] = useState<AppTab>("scores");
 
   async function load(nextSeason = season, nextWeek = week, useLatestWeek = false) {
     const info = await api.status(nextSeason);
@@ -99,70 +100,26 @@ export default function App() {
   }
 
   const weeks = status?.weeks.length ? status.weeks : [week];
+  const syncMeta = status?.last_sync
+    ? `${formatDateTimeMonterrey(status.last_sync)} · ${status.games} partidos`
+    : undefined;
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-background">
-      <header className="shrink-0 border-b-2 border-primary bg-white text-foreground">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <img src="/nfl-logo.png" alt="" className="h-16 w-auto shrink-0" />
-            <div>
-              <h1 className="text-4xl font-semibold tracking-wide text-primary">
-                NFL <span className="text-destructive">STATS</span>
-              </h1>
-              <p className="text-sm text-muted-foreground">Cartelera, proyección y bankroll. El teléfono solo llama a esta API.</p>
-            </div>
-          </div>
-          <Button
-            className="bg-destructive text-white hover:bg-destructive/90"
-            onClick={sync}
-            disabled={!!busy}
-          >
-            <RefreshCw className={busy ? "animate-spin" : ""} />
-            {busy ? "Sincronizando" : "Sincronizar"}
-          </Button>
+    <AppShell tab={tab} onTabChange={setTab} onSync={sync} busy={!!busy}>
+      {error && (
+        <div className="mb-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-white">
+          {error}
         </div>
-        <div className="mx-auto flex max-w-6xl flex-wrap items-end gap-3 px-4 pb-4">
-          <p className="pb-2 text-sm font-semibold tracking-wide text-primary">Temporada {season}</p>
-          <div className="grid gap-1">
-            <Label className="text-xs tracking-wide text-primary uppercase">Semana</Label>
-            <Select value={String(week)} onValueChange={(value) => changeWeek(Number(value))}>
-              <SelectTrigger className="w-40 border-primary/40 bg-white text-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {weeks.map((item) => (
-                  <SelectItem key={item} value={String(item)}>
-                    Semana {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <p className="pb-2 text-sm text-muted-foreground">
-            {status?.last_sync ? `Último sync: ${formatDateTimeMonterrey(status.last_sync)}` : "Sin sincronizar"}
-            {" · "}
-            {status?.games ?? 0} partidos · {status?.teams ?? 0} equipos
-          </p>
-        </div>
-        <div className="h-1 bg-destructive" />
-      </header>
-      <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-4">
-        {error && <div className="shrink-0 rounded-lg border-2 border-primary border-l-4 border-l-destructive bg-white px-4 py-3 text-sm">{error}</div>}
-        <Tabs defaultValue="scores" className="min-h-0 flex-1">
-          <TabsList variant="line" className="shrink-0 h-9 border-b border-primary/25 bg-transparent">
-            <TabsTrigger value="scores" className="data-active:text-primary after:bg-destructive">Scores</TabsTrigger>
-            <TabsTrigger value="tablero" className="data-active:text-primary after:bg-destructive">Tablero</TabsTrigger>
-            <TabsTrigger value="rankings" className="data-active:text-primary after:bg-destructive">Rankings</TabsTrigger>
-            <TabsTrigger value="bankroll" className="data-active:text-primary after:bg-destructive">Bankroll</TabsTrigger>
-          </TabsList>
-          <TabsContent value="scores" className="min-h-0 overflow-y-auto">
-            <NflScoresHub board={board} rankings={rankings} week={week} weeks={weeks} onWeekChange={changeWeek} />
-          </TabsContent>
-          <TabsContent value="tablero" className="min-h-0 overflow-y-auto">
-            <div className="grid gap-3">
+      )}
+      {tab === "scores" && (
+        <NflScoresHub board={board} rankings={rankings} week={week} weeks={weeks} onWeekChange={changeWeek} />
+      )}
+      {tab === "tablero" && (
+        <>
+          <WeekToolbar season={season} week={week} weeks={weeks} onWeekChange={changeWeek} meta={syncMeta} />
+          <div className="grid gap-3">
             {busy && !board ? (
-              <p className="rounded-lg border-2 border-primary bg-white px-4 py-3 text-sm">Actualizando el corte de nfldata…</p>
+              <p className="rounded-xl bg-[#242731] px-4 py-3 text-sm text-white/70">Actualizando nfldata…</p>
             ) : board?.games.length ? (
               board.games.map((game) => (
                 <GameEditor
@@ -174,21 +131,18 @@ export default function App() {
                 />
               ))
             ) : (
-              <p className="rounded-lg border-2 border-primary border-l-4 border-l-destructive bg-white px-4 py-3 text-sm">
-                No hay cartelera para esta semana. Sincroniza la temporada.
+              <p className="rounded-xl bg-[#242731] px-4 py-3 text-sm text-white/70">
+                No hay cartelera para esta semana. Pulsa sincronizar arriba a la derecha.
               </p>
             )}
-            </div>
-          </TabsContent>
-          <TabsContent value="rankings" className="min-h-0 overflow-y-auto">
-            <TeamRankings rankings={rankings} season={season} />
-          </TabsContent>
-          <TabsContent value="bankroll" className="min-h-0 overflow-y-auto">
-            <Bankroll lines={bank} form={form} setForm={setForm} onChange={setBank} onError={setError} />
-          </TabsContent>
-        </Tabs>
-      </main>
-    </div>
+          </div>
+        </>
+      )}
+      {tab === "teams" && <TeamRankings rankings={rankings} season={season} />}
+      {tab === "bankroll" && (
+        <Bankroll lines={bank} form={form} setForm={setForm} onChange={setBank} onError={setError} />
+      )}
+    </AppShell>
   );
 }
 
@@ -198,11 +152,10 @@ function MatchupTeam({ side, align = "start" }: { side: Side; align?: "start" | 
     <div className={`flex min-w-0 items-center gap-2.5 ${end ? "flex-row-reverse text-right" : ""}`}>
       <TeamLogo abbr={side.abbr} name={side.name} className="size-11 sm:size-14" />
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold tracking-wide text-primary sm:text-xl">
-          <span className="sm:hidden">{side.abbr}</span>
-          <span className="hidden sm:inline">{side.name}</span>
+        <p className="font-industry truncate text-sm font-black italic tracking-wide text-white uppercase sm:text-lg">
+          {teamNickname(side.abbr)}
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-white/55">
           {record(side)}
           <span className="hidden sm:inline"> · {side.ppg ?? "—"} pts</span>
         </p>
@@ -213,7 +166,7 @@ function MatchupTeam({ side, align = "start" }: { side: Side; align?: "start" | 
 
 function TeamMark({ abbr, name, align = "start" }: { abbr: string; name: string; align?: "start" | "end" }) {
   return (
-    <span className={`inline-flex items-center gap-2 font-semibold ${align === "end" ? "flex-row-reverse" : ""}`}>
+    <span className={`inline-flex items-center gap-2 font-semibold text-white ${align === "end" ? "flex-row-reverse" : ""}`}>
       <TeamLogo abbr={abbr} name={name} className="size-7" />
       {abbr}
     </span>
@@ -298,46 +251,46 @@ function GameEditor({
   ];
 
   return (
-    <Card className="gap-0 overflow-hidden border-2 border-primary bg-white py-0 text-foreground ring-0">
+    <Card className="gap-0 overflow-hidden border border-white/10 bg-[#242731] py-0 text-white ring-0">
       <button
         type="button"
-        className="block w-full bg-white text-left text-foreground"
+        className="block w-full text-left text-white"
         aria-expanded={open}
         onClick={onToggle}
       >
-        <CardHeader className="flex flex-row items-center gap-3 rounded-none bg-white text-foreground">
+        <CardHeader className="flex flex-row items-center gap-3 rounded-none bg-transparent text-white">
           <div className="grid min-w-0 flex-1 gap-2">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
               <MatchupTeam side={game.away} />
-              <span className="text-sm font-semibold tracking-widest text-destructive">@</span>
+              <span className="text-sm font-semibold tracking-widest text-white/45">@</span>
               <MatchupTeam side={game.home} align="end" />
             </div>
-            <CardDescription className="text-muted-foreground">
+            <CardDescription className="text-white/50">
               {game.gameday || "Fecha por confirmar"}
               {game.confirmed ? " · confirmado" : ""}
             </CardDescription>
           </div>
-          <ChevronDown className={`size-5 shrink-0 text-primary transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`} />
+          <ChevronDown className={`size-5 shrink-0 text-white/70 transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`} />
         </CardHeader>
       </button>
-      <div className={`grid bg-card transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden bg-card">
-      <CardContent className="grid gap-4">
+      <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">
+      <CardContent className="grid gap-4 border-t border-white/10 pt-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs tracking-wide text-muted-foreground uppercase">Más ganados</p>
-            <p className="text-xl font-semibold text-primary">{game.winner_record}</p>
+            <p className="text-xs tracking-wide text-white/50 uppercase">Más ganados</p>
+            <p className="text-xl font-semibold text-white">{game.winner_record}</p>
           </div>
           <div>
-            <p className="text-xs tracking-wide text-muted-foreground uppercase">
+            <p className="text-xs tracking-wide text-white/50 uppercase">
               Rankings {game.rank_away}-{game.rank_home}
             </p>
-            <p className="text-xl font-semibold text-primary">{game.winner_ranks}</p>
+            <p className="text-xl font-semibold text-white">{game.winner_ranks}</p>
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0b0e14] px-3 py-2.5">
           <TeamMark abbr={game.away.abbr} name={game.away.name} />
-          <Badge className={game.total_pick === "OVER" ? "bg-destructive text-white" : undefined}>
+          <Badge className={game.total_pick === "OVER" ? "bg-destructive text-white" : "bg-white/10 text-white"}>
             {game.total_pick || "SIN LÍNEA"}
           </Badge>
           <TeamMark abbr={game.home.abbr} name={game.home.name} align="end" />
@@ -356,9 +309,12 @@ function GameEditor({
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {fields.map((field) => (
             <div key={field.key} className="grid gap-1.5">
-              <Label htmlFor={`${game.game_id}-${field.key}`}>{field.label}</Label>
+              <Label htmlFor={`${game.game_id}-${field.key}`} className="text-white/70">
+                {field.label}
+              </Label>
               <Input
                 id={`${game.game_id}-${field.key}`}
+                className="border-white/15 bg-[#0b0e14] text-white"
                 type={field.step ? "number" : "text"}
                 step={field.step}
                 value={draft[field.key] as string | number}
@@ -367,15 +323,18 @@ function GameEditor({
             </div>
           ))}
           <div className="col-span-full grid gap-1.5">
-            <Label htmlFor={`${game.game_id}-injuries`}>Lesionados</Label>
+            <Label htmlFor={`${game.game_id}-injuries`} className="text-white/70">
+              Lesionados
+            </Label>
             <Input
               id={`${game.game_id}-injuries`}
+              className="border-white/15 bg-[#0b0e14] text-white"
               value={draft.injuries}
               onChange={(event) => setDraft({ ...draft, injuries: event.target.value })}
             />
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm text-white/80">
           <Checkbox
             checked={draft.confirmed}
             onCheckedChange={(checked) => setDraft({ ...draft, confirmed: checked === true })}
@@ -429,9 +388,9 @@ function GameEditor({
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-primary/30 bg-white px-3 py-2">
-      <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="text-lg font-semibold text-primary">{value}</p>
+    <div className="rounded-lg border border-white/10 bg-[#0b0e14] px-3 py-2">
+      <p className="text-xs tracking-wide text-white/50 uppercase">{label}</p>
+      <p className="text-lg font-semibold text-white">{value}</p>
     </div>
   );
 }
@@ -467,8 +426,8 @@ function Bankroll({
 
   return (
     <div className="grid gap-3">
-      <Card className="border-2 border-primary ring-0">
-        <CardContent>
+      <Card className="border border-white/10 bg-[#242731] ring-0">
+        <CardContent className="pt-4">
           <form
             className="grid gap-3"
             onSubmit={(event) => {
@@ -478,25 +437,49 @@ function Bankroll({
           >
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div className="grid gap-1.5">
-                <Label htmlFor="group">Grupo</Label>
-                <Input id="group" value={form.group_key} onChange={(event) => setForm({ ...form, group_key: event.target.value })} />
+                <Label htmlFor="group" className="text-white/70">
+                  Grupo
+                </Label>
+                <Input
+                  id="group"
+                  className="border-white/15 bg-[#0b0e14] text-white"
+                  value={form.group_key}
+                  onChange={(event) => setForm({ ...form, group_key: event.target.value })}
+                />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="odds">Momio</Label>
-                <Input id="odds" value={form.odds} onChange={(event) => setForm({ ...form, odds: event.target.value })} />
+                <Label htmlFor="odds" className="text-white/70">
+                  Momio
+                </Label>
+                <Input
+                  id="odds"
+                  className="border-white/15 bg-[#0b0e14] text-white"
+                  value={form.odds}
+                  onChange={(event) => setForm({ ...form, odds: event.target.value })}
+                />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="stake">Stake</Label>
+                <Label htmlFor="stake" className="text-white/70">
+                  Stake
+                </Label>
                 <Input
                   id="stake"
+                  className="border-white/15 bg-[#0b0e14] text-white"
                   placeholder="vacío = reinvierte"
                   value={form.stake}
                   onChange={(event) => setForm({ ...form, stake: event.target.value })}
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="note">Nota</Label>
-                <Input id="note" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+                <Label htmlFor="note" className="text-white/70">
+                  Nota
+                </Label>
+                <Input
+                  id="note"
+                  className="border-white/15 bg-[#0b0e14] text-white"
+                  value={form.note}
+                  onChange={(event) => setForm({ ...form, note: event.target.value })}
+                />
               </div>
             </div>
             <Button type="submit" className="bg-destructive text-white hover:bg-destructive/90">
@@ -506,23 +489,27 @@ function Bankroll({
         </CardContent>
       </Card>
       {lines.map((line) => (
-        <Card key={line.id} className="border-2 border-primary ring-0">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3">
+        <Card key={line.id} className="border border-white/10 bg-[#242731] ring-0">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 text-white">
             <div>
-              <p className="font-semibold text-primary">{line.label || line.group_key}</p>
-              <p className="text-sm text-muted-foreground">{line.note}</p>
+              <p className="font-semibold">{line.label || line.group_key}</p>
+              <p className="text-sm text-white/55">{line.note}</p>
             </div>
             <p>x{line.odds}</p>
             <p>Stake {line.stake_used ?? "—"}</p>
             <p>Pago {line.payout ?? "—"}</p>
-            <Button variant="outline" className="text-destructive" onClick={() => api.deleteBankroll(line.id).then(onChange)}>
+            <Button
+              variant="outline"
+              className="border-white/20 text-destructive hover:bg-white/5"
+              onClick={() => api.deleteBankroll(line.id).then(onChange)}
+            >
               Quitar
             </Button>
           </CardContent>
         </Card>
       ))}
       {!lines.length && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-white/55">
           El stake vacío reinvierte el pago anterior del mismo grupo, como las tres piernas del Excel.
         </p>
       )}

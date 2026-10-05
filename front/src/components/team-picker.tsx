@@ -57,7 +57,7 @@ export function TeamPicker({
   onSelect: (abbr: string) => void;
 }) {
   return (
-    <div className="rounded-xl bg-[#0b0e14] px-3 py-4 sm:px-4">
+    <div className="py-1">
       <h2 className="font-industry text-[1.65rem] leading-tight font-black italic tracking-wide text-white uppercase sm:text-3xl">
         Elige tu equipo
       </h2>

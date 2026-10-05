@@ -330,7 +330,7 @@ export function NflScoresHub({
   }
 
   return (
-    <div className="-mx-4 min-h-full bg-[#0b0e14] px-4 pb-8 text-white sm:-mx-0 sm:rounded-xl sm:px-4">
+    <div className="pb-4 text-white">
       <div className="flex gap-6 border-b border-white/15 pt-2">
         {TAB_LABELS.map((item) => (
           <button
