@@ -50,7 +50,7 @@ export function kickoffLabel(game: GameCard) {
   if (!date) return "TBD";
   const day = calendarWeekday(date);
   if (day === 4) return "8:15pm";
-  if (day === 1) return "8:15pm";
+  if (day === 1) return "6:15pm";
   if (day === 0) return "1:00pm";
   return "TBD";
 }
@@ -66,7 +66,7 @@ export function winPct(wins: number, losses: number, ties: number) {
   return pct >= 1 ? "1.000" : pct.toFixed(3).replace(/^0/, "");
 }
 
-export function groupGamesByDay(games: GameCard[]) {
+export function groupGamesByDay(games: GameCard[], order: "asc" | "desc" = "asc") {
   const map = new Map<string, GameCard[]>();
   for (const game of games) {
     const key = game.gameday ?? "unknown";
@@ -74,5 +74,14 @@ export function groupGamesByDay(games: GameCard[]) {
     bucket.push(game);
     map.set(key, bucket);
   }
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  return [...map.entries()].sort(([a], [b]) => (order === "asc" ? a.localeCompare(b) : b.localeCompare(a)));
+}
+
+export function gamedaySortKey(game: GameCard) {
+  return parseGameday(game.gameday)?.getTime() ?? Number.POSITIVE_INFINITY;
+}
+
+export function sortGamesByGameday(games: GameCard[], direction: "asc" | "desc") {
+  const factor = direction === "asc" ? 1 : -1;
+  return [...games].sort((a, b) => (gamedaySortKey(a) - gamedaySortKey(b)) * factor);
 }

@@ -46,6 +46,16 @@ export function parseCalendarDate(value: string) {
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
 }
 
+/** Fecha de hoy (calendario) en Monterrey. */
+export function todayInMonterrey() {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return parseCalendarDate(ymd);
+}
 export function calendarWeekday(date: Date) {
   const label = new Intl.DateTimeFormat("en-US", { timeZone: APP_TIME_ZONE, weekday: "short" }).format(date);
   const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };

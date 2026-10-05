@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Board, GameCard, Rankings } from "@/api";
 import { TeamLogo } from "@/components/team-logo";
-import { calendarWeekday } from "@/lib/datetime";
+import { todayInMonterrey } from "@/lib/datetime";
 import { normalizeTeamAbbr, teamAccent, teamNickname } from "@/lib/team-meta";
 import {
   broadcastEventTitle,
@@ -13,6 +13,7 @@ import {
   kickoffLabel,
   parseGameday,
   recordLabel,
+  sortGamesByGameday,
   weekDateRangeLabel,
   winPct,
 } from "@/lib/scores-format";
@@ -120,51 +121,38 @@ function EventHeader({ date }: { date: Date }) {
   );
 }
 
-function DayHeader({ date }: { date: Date }) {
-  return (
-    <h3 className="mt-6 border-b border-white/15 pb-2 text-lg font-semibold text-white first:mt-0">
-      {formatLongWeekdayDate(date)}
-    </h3>
-  );
-}
-
 function ScoresPanel({ games, week }: { games: GameCard[]; week: number }) {
-  const upcoming = useMemo(() => games.filter((game) => !isFinal(game)), [games]);
-  const completedPrime = useMemo(
-    () =>
-      games.filter((game) => {
-        if (!isFinal(game)) return false;
-        const date = parseGameday(game.gameday);
-        if (!date) return false;
-        const day = calendarWeekday(date);
-        return day === 4 || day === 1;
-      }),
-    [games],
-  );
-  const completedByDay = useMemo(
-    () =>
-      groupGamesByDay(
-        games.filter((game) => {
-          if (!isFinal(game)) return false;
-          const date = parseGameday(game.gameday);
-          if (!date) return false;
-          const day = calendarWeekday(date);
-          return day !== 4 && day !== 1;
-        }),
-      ),
-    [games],
-  );
+  const { upcomingGroups, completedGroups } = useMemo(() => {
+    const today = todayInMonterrey()?.getTime() ?? 0;
+    const upcomingRaw = games.filter((game) => !isFinal(game));
+    const upcoming = sortGamesByGameday(upcomingRaw, "asc").sort((a, b) => {
+      const ta = parseGameday(a.gameday)?.getTime() ?? Number.POSITIVE_INFINITY;
+      const tb = parseGameday(b.gameday)?.getTime() ?? Number.POSITIVE_INFINITY;
+      const aFuture = ta >= today ? 0 : 1;
+      const bFuture = tb >= today ? 0 : 1;
+      if (aFuture !== bFuture) return aFuture - bFuture;
+      return ta - tb;
+    });
+    const completed = sortGamesByGameday(
+      games.filter((game) => isFinal(game)),
+      "desc",
+    );
+    return {
+      upcomingGroups: groupGamesByDay(upcoming, "asc"),
+      completedGroups: groupGamesByDay(completed, "desc"),
+    };
+  }, [games]);
 
   return (
     <div className="grid gap-2">
-      {!!upcoming.length && (
+      {!!upcomingGroups.length && (
         <section>
           <h2 className="text-xl font-semibold text-white">Upcoming Games</h2>
-          {groupGamesByDay(upcoming).map(([dayKey, dayGames]) => {
+          {upcomingGroups.map(([dayKey, dayGames]) => {
             const date = parseGameday(dayKey);
             if (!date) return null;
             return (
-              <div key={dayKey}>
+              <div key={`up-${dayKey}`}>
                 <EventHeader date={date} />
                 <div className="grid gap-3">
                   {dayGames.map((game) => (
@@ -177,14 +165,14 @@ function ScoresPanel({ games, week }: { games: GameCard[]; week: number }) {
         </section>
       )}
 
-      {!!completedPrime.length && (
-        <section>
+      {!!completedGroups.length && (
+        <section className={upcomingGroups.length ? "mt-4" : ""}>
           <h2 className="text-xl font-semibold text-white">Completed Games</h2>
-          {groupGamesByDay(completedPrime).map(([dayKey, dayGames]) => {
+          {completedGroups.map(([dayKey, dayGames]) => {
             const date = parseGameday(dayKey);
             if (!date) return null;
             return (
-              <div key={dayKey}>
+              <div key={`done-${dayKey}`}>
                 <EventHeader date={date} />
                 <div className="grid gap-3">
                   {dayGames.map((game) => (
@@ -196,21 +184,6 @@ function ScoresPanel({ games, week }: { games: GameCard[]; week: number }) {
           })}
         </section>
       )}
-
-      {completedByDay.map(([dayKey, dayGames]) => {
-        const date = parseGameday(dayKey);
-        if (!date) return null;
-        return (
-          <div key={`day-${dayKey}`}>
-            <DayHeader date={date} />
-            <div className="grid gap-3">
-              {dayGames.map((game) => (
-                <ScoreGameCard key={game.game_id} game={game} />
-              ))}
-            </div>
-          </div>
-        );
-      })}
 
       {!games.length && (
         <p className="py-8 text-center text-sm text-white/60">No hay partidos en la semana {week}. Sincroniza la temporada.</p>
