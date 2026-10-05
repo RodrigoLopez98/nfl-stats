@@ -55,9 +55,7 @@ def sync_season(db: Session, season: int) -> dict:
     db.flush()
     try:
         with httpx.Client(base_url=settings.nfl_api_base, timeout=60.0) as client:
-            games = fetch_all(client, "/v1/games/scoring", {"season": season})
-            if not games:
-                games = fetch_all(client, "/v1/games", {"season": season})
+            games = fetch_all(client, "/v1/games", {"season": season})
             stats = fetch_all(client, "/v1/stats/team", {"season": season})
         stats = _prefer_regular(stats)
         games_upserted = _upsert_games(db, games)
@@ -108,8 +106,12 @@ def _upsert_games(db: Session, rows: list[dict]) -> int:
         game.gameday = _date(row.get("gameday"))
         game.home_team = home
         game.away_team = away
-        game.home_score = _int(row.get("home_score"))
-        game.away_score = _int(row.get("away_score"))
+        away_score = _int(row.get("away_score"))
+        home_score = _int(row.get("home_score"))
+        if away_score is not None:
+            game.away_score = away_score
+        if home_score is not None:
+            game.home_score = home_score
         game.stadium = row.get("stadium")
         game.api_spread = _num(row.get("spread_line"))
         game.api_total = _num(row.get("total_line"))

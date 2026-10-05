@@ -1,4 +1,4 @@
-"""Marcadores en vivo: nfldata suele ir retrasado; ESPN los publica el mismo día."""
+"""Marcadores en vivo cuando nfldata aún trae null (común el mismo día del partido)."""
 
 from __future__ import annotations
 
@@ -7,56 +7,23 @@ from datetime import date
 from itertools import product
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Game
 
 ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
-# Sinónimos entre ESPN, nfldata y nflverse
-TEAM_ALIASES: dict[str, set[str]] = {
-    "ARI": {"ARI"},
-    "ATL": {"ATL"},
-    "BAL": {"BAL"},
-    "BUF": {"BUF"},
-    "CAR": {"CAR"},
-    "CHI": {"CHI"},
-    "CIN": {"CIN"},
-    "CLE": {"CLE"},
-    "DAL": {"DAL"},
-    "DEN": {"DEN"},
-    "DET": {"DET"},
-    "GB": {"GB"},
-    "HOU": {"HOU"},
-    "IND": {"IND"},
-    "JAX": {"JAX", "JAC"},
-    "JAC": {"JAX", "JAC"},
-    "KC": {"KC"},
-    "LV": {"LV", "OAK", "LVR"},
-    "LAC": {"LAC", "SD"},
-    "LA": {"LA", "LAR"},
-    "LAR": {"LA", "LAR"},
-    "MIA": {"MIA"},
-    "MIN": {"MIN"},
-    "NE": {"NE", "NWE"},
-    "NO": {"NO", "NOR"},
-    "NYG": {"NYG"},
-    "NYJ": {"NYJ"},
-    "PHI": {"PHI"},
-    "PIT": {"PIT"},
-    "SF": {"SF", "SFO"},
-    "SEA": {"SEA"},
-    "TB": {"TB", "TAM"},
-    "TEN": {"TEN"},
-    "WAS": {"WAS", "WSH"},
-    "WSH": {"WAS", "WSH"},
-}
 
-
-def _aliases(abbr: str) -> set[str]:
-    key = abbr.upper()
-    return TEAM_ALIASES.get(key, {key})
+def _match_keys(abbr: str) -> set[str]:
+    """Abreviaturas equivalentes entre ESPN y nfldata."""
+    code = abbr.upper()
+    keys = {code}
+    if code in {"LA", "LAR"}:
+        keys.update({"LA", "LAR"})
+    if code in {"WAS", "WSH"}:
+        keys.update({"WAS", "WSH"})
+    return keys
 
 
 def _fetch_scoreboard(client: httpx.Client, gameday: date) -> list[dict]:
@@ -76,8 +43,7 @@ def _final_scores(event: dict) -> tuple[str, int, str, int] | None:
     away_abbr = home_abbr = None
     away_score = home_score = None
     for team in competition.get("competitors") or []:
-        abbr = (team.get("team") or {}).get("abbreviation") or ""
-        abbr = abbr.upper()
+        abbr = ((team.get("team") or {}).get("abbreviation") or "").upper()
         score_raw = team.get("score")
         if score_raw is None or score_raw == "":
             return None
@@ -98,7 +64,7 @@ def _register_lookup(
     home_abbr: str,
     home_score: int,
 ) -> None:
-    for away_key, home_key in product(_aliases(away_abbr), _aliases(home_abbr)):
+    for away_key, home_key in product(_match_keys(away_abbr), _match_keys(home_abbr)):
         lookup[(away_key, home_key)] = (away_score, home_score)
 
 
@@ -107,7 +73,7 @@ def _lookup_scores(
     away_team: str,
     home_team: str,
 ) -> tuple[int, int] | None:
-    for away_key, home_key in product(_aliases(away_team), _aliases(home_team)):
+    for away_key, home_key in product(_match_keys(away_team), _match_keys(home_team)):
         hit = lookup.get((away_key, home_key))
         if hit:
             return hit
@@ -119,8 +85,8 @@ def enrich_scores_from_espn(db: Session, season: int) -> int:
         select(Game).where(
             Game.season == season,
             Game.game_type == "REG",
-            Game.home_score.is_(None),
             Game.gameday.is_not(None),
+            or_(Game.home_score.is_(None), Game.away_score.is_(None)),
         )
     ).all()
     if not pending:
