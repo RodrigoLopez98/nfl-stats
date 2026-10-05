@@ -11,6 +11,11 @@ export function teamLogoUrl(abbr: string) {
   return `https://a.espncdn.com/i/teamlogos/nfl/500/${code}.png`;
 }
 
+/** Cascos laterales (transparentes) usados en la cuadrícula tipo NFL App. */
+export function teamHelmetUrl(abbr: string) {
+  return `https://raw.githubusercontent.com/ajreinhard/data-viz/master/helmet_left/${abbr.toUpperCase()}.png`;
+}
+
 export function TeamLogo({
   abbr,
   name,

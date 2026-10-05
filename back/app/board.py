@@ -90,7 +90,9 @@ def _snapshots(db: Session, season: int, before_week: int):
             ties[game.home_team] += 1
             ties[game.away_team] += 1
 
-    stats = db.scalars(select(TeamStat).where(TeamStat.season == season)).all()
+    stats = db.scalars(
+        select(TeamStat).where(TeamStat.season == season, TeamStat.season_type == "REG")
+    ).all()
     stat_by_team = {row.team: row for row in stats}
     per_game: dict[str, dict[str, float | None]] = {}
     totals: dict[str, dict[str, float]] = {}
@@ -210,43 +212,14 @@ def build_board(db: Session, season: int, week: int) -> BoardOut:
     return BoardOut(season=season, week=week, games=cards)
 
 
-def _season_points(db: Session, season: int) -> dict[str, int]:
-    scored: dict[str, int] = defaultdict(int)
-    games = db.scalars(select(Game).where(Game.season == season, Game.game_type == "REG")).all()
-    for game in games:
-        if game.home_score is None or game.away_score is None:
-            continue
-        scored[game.home_team] += int(game.home_score)
-        scored[game.away_team] += int(game.away_score)
-    return scored
-
-
-def _rank_high(values: dict[str, int]) -> dict[str, int]:
-    series = sorted(values.items(), key=lambda item: item[1], reverse=True)
-    placed: dict[str, int] = {}
-    rank = 0
-    previous: int | None = None
-    for index, (team, value) in enumerate(series, start=1):
-        if previous is None or value != previous:
-            rank = index
-            previous = value
-        placed[team] = rank
-    return placed
-
-
 def build_rankings(db: Session, season: int, week: int) -> RankingsOut:
     played, wins, losses, _ties, points, _per, totals, ranks = _snapshots(db, season, week)
-    season_points = _season_points(db, season)
-    point_ranks = _rank_high(season_points)
     teams = []
-    for abbr in sorted(set(played) | set(ranks) | set(season_points), key=lambda item: _team_name(item)):
+    for abbr in sorted(set(played) | set(ranks), key=lambda item: _team_name(item)):
         counted = len(played[abbr])
         ppg = (points[abbr] / counted) if counted else None
         row_totals = dict(totals.get(abbr, {}))
         row_ranks = {key: ranks.get(abbr, {}).get(key) for key, _label in RANK_CATEGORIES + SPECIAL_CATEGORIES}
-        if abbr in season_points:
-            row_totals["points"] = float(season_points[abbr])
-            row_ranks["points"] = point_ranks[abbr]
         teams.append(
             RankRow(
                 abbr=abbr,

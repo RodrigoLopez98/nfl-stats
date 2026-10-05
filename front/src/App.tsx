@@ -12,7 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TeamLogo } from "@/components/team-logo";
 import { TeamRankings } from "@/components/team-rankings";
+import { NflScoresHub } from "@/components/nfl-scores-hub";
 import { api, type BankrollLine, type Board, type GameCard, type Rankings, type Side, type Status } from "./api";
+
+/** Temporada NFL en curso (marzo en adelante = año calendario). */
+function currentNflSeason(reference = new Date()) {
+  return reference.getMonth() >= 2 ? reference.getFullYear() : reference.getFullYear() - 1;
+}
 
 const emptyForm = {
   group_key: "parlay",
@@ -23,7 +29,7 @@ const emptyForm = {
 };
 
 export default function App() {
-  const [season, setSeason] = useState(new Date().getMonth() >= 2 ? new Date().getFullYear() : new Date().getFullYear() - 1);
+  const season = currentNflSeason();
   const [week, setWeek] = useState(1);
   const [status, setStatus] = useState<Status | null>(null);
   const [board, setBoard] = useState<Board | null>(null);
@@ -74,13 +80,6 @@ export default function App() {
     };
   }, []);
 
-  async function changeSeason(value: number) {
-    if (!Number.isFinite(value) || value === season) return;
-    setSeason(value);
-    setError("");
-    await load(value, week).catch((err: Error) => setError(err.message));
-  }
-
   async function changeWeek(value: number) {
     if (!Number.isFinite(value) || value === week) return;
     setWeek(value);
@@ -103,7 +102,6 @@ export default function App() {
     }
   }
 
-  const years = [season - 1, season, season + 1];
   const weeks = status?.weeks.length ? status.weeks : [week];
 
   return (
@@ -129,21 +127,7 @@ export default function App() {
           </Button>
         </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-end gap-3 px-4 pb-4">
-          <div className="grid gap-1">
-            <Label className="text-xs tracking-wide text-primary uppercase">Temporada</Label>
-            <Select value={String(season)} onValueChange={(value) => changeSeason(Number(value))}>
-              <SelectTrigger className="w-36 border-primary/40 bg-white text-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {years.map((year) => (
-                  <SelectItem key={year} value={String(year)}>
-                    {year}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <p className="pb-2 text-sm font-semibold tracking-wide text-primary">Temporada {season}</p>
           <div className="grid gap-1">
             <Label className="text-xs tracking-wide text-primary uppercase">Semana</Label>
             <Select value={String(week)} onValueChange={(value) => changeWeek(Number(value))}>
@@ -169,12 +153,16 @@ export default function App() {
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-4">
         {error && <div className="shrink-0 rounded-lg border-2 border-primary border-l-4 border-l-destructive bg-white px-4 py-3 text-sm">{error}</div>}
-        <Tabs defaultValue="tablero" className="min-h-0 flex-1">
+        <Tabs defaultValue="scores" className="min-h-0 flex-1">
           <TabsList variant="line" className="shrink-0 h-9 border-b border-primary/25 bg-transparent">
+            <TabsTrigger value="scores" className="data-active:text-primary after:bg-destructive">Scores</TabsTrigger>
             <TabsTrigger value="tablero" className="data-active:text-primary after:bg-destructive">Tablero</TabsTrigger>
             <TabsTrigger value="rankings" className="data-active:text-primary after:bg-destructive">Rankings</TabsTrigger>
             <TabsTrigger value="bankroll" className="data-active:text-primary after:bg-destructive">Bankroll</TabsTrigger>
           </TabsList>
+          <TabsContent value="scores" className="min-h-0 overflow-y-auto">
+            <NflScoresHub board={board} rankings={rankings} week={week} weeks={weeks} onWeekChange={changeWeek} />
+          </TabsContent>
           <TabsContent value="tablero" className="min-h-0 overflow-y-auto">
             <div className="grid gap-3">
             {busy && !board ? (
