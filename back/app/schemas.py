@@ -150,3 +150,18 @@ class DashboardOut(BaseModel):
     status: StatusOut
     board: BoardOut
     rankings: RankingsOut
+
+
+class ForecastIn(BaseModel):
+    game_id: str = Field(min_length=1, max_length=40)
+    brief: str = Field(min_length=20, max_length=8000)
+
+
+class ForecastOut(BaseModel):
+    win_away: int
+    win_home: int
+    score_away: int
+    score_home: int
+    over_prob: int
+    under_prob: int
+    margin: str

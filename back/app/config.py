@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     enable_scheduler: bool = True
     cors_origins: str = "*"
     nfl_api_base: str = "https://api.nfldata.org"
+    ai_base_url: str = "https://text.pollinations.ai/openai/v1"
+    ai_model: str = "openai"
+    ai_api_key: str = ""
 
     @property
     def sqlalchemy_url(self) -> str:

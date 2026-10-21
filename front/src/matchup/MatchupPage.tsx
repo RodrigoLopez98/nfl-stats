@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, CloudSun, Gauge, MapPin, Power, Star, Sun } from "lucide-react";
+import { api } from "@/api";
 import { TeamLogo } from "@/components/team-logo";
 import { teamNickname } from "@/lib/team-meta";
 import {
+  applyAiForecast,
+  forecastBrief,
   formatCompare,
   IMAGE_MATCHUP,
   loadMatchupSlate,
   matchupAt,
+  type AiPick,
   type CompareRow,
   type Factor,
   type Injury,
@@ -30,6 +34,7 @@ export function MatchupPage() {
   const [data, setData] = useState<MatchupData>(IMAGE_MATCHUP);
   const [slate, setSlate] = useState<MatchupSlate | null>(null);
   const [index, setIndex] = useState(0);
+  const [forecast, setForecast] = useState<{ gameId: string; status: "loading" | "ready" | "error"; pick?: AiPick } | null>(null);
 
   useEffect(() => {
     let cancel = false;
@@ -46,6 +51,36 @@ export function MatchupPage() {
   useEffect(() => {
     if (!slate?.games.length) return;
     setData(matchupAt(slate, index));
+  }, [slate, index]);
+
+  useEffect(() => {
+    if (!slate?.games.length) return;
+    const current = matchupAt(slate, index);
+    if (current.gameId === IMAGE_MATCHUP.gameId) return;
+    const controller = new AbortController();
+    setForecast({ gameId: current.gameId, status: "loading" });
+    api
+      .forecast(current.gameId, forecastBrief(current), controller.signal)
+      .then((row) => {
+        setForecast({
+          gameId: current.gameId,
+          status: "ready",
+          pick: {
+            winAway: row.win_away,
+            winHome: row.win_home,
+            scoreAway: row.score_away,
+            scoreHome: row.score_home,
+            overProb: row.over_prob,
+            underProb: row.under_prob,
+            margin: row.margin,
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setForecast({ gameId: current.gameId, status: "error" });
+      });
+    return () => controller.abort();
   }, [slate, index]);
 
   useEffect(() => {
@@ -67,9 +102,13 @@ export function MatchupPage() {
   const totalGames = slate?.games.length ?? 0;
   const prevGame = slate?.games[index - 1];
   const nextGame = slate?.games[index + 1];
+  const pick = forecast?.status === "ready" && forecast.pick && forecast.gameId === data.gameId ? forecast.pick : null;
+  const failed = forecast?.status === "error" && forecast.gameId === data.gameId;
+  const pending = Boolean(slate) && data.gameId !== IMAGE_MATCHUP.gameId && !pick && !failed;
+  const shown = pick ? applyAiForecast(data, pick) : data;
 
-  const awayPts = data.away.quarters.reduce((sum, n) => sum + n, 0);
-  const homePts = data.home.quarters.reduce((sum, n) => sum + n, 0);
+  const awayPts = shown.away.quarters.reduce((sum, n) => sum + n, 0);
+  const homePts = shown.home.quarters.reduce((sum, n) => sum + n, 0);
 
   return (
     <main className="mp">
@@ -108,58 +147,58 @@ export function MatchupPage() {
       </header>
       <div className="mp-board">
         <section className="cols-3">
-          <article className="card prob-card">
+          <article className={`card prob-card${pending ? " ai-wait" : ""}`}>
             <h2 className="card-h">Probabilidad de ganar</h2>
             <div className="card-b">
               <div className="prob">
-                <div className="prob-side away" style={{ width: `${data.winAway}%` }}>
-                  <span className="pct">{data.winAway}%</span>
+                <div className="prob-side away" style={{ width: `${pick ? shown.winAway : 50}%` }}>
+                  <span className="pct">{pick ? `${shown.winAway}%` : failed ? "" : pending ? "…" : `${shown.winAway}%`}</span>
                 </div>
-                <div className="prob-side home" style={{ width: `${data.winHome}%` }}>
-                  <span className="pct">{data.winHome}%</span>
+                <div className="prob-side home" style={{ width: `${pick ? shown.winHome : 50}%` }}>
+                  <span className="pct">{pick ? `${shown.winHome}%` : failed ? "" : pending ? "…" : `${shown.winHome}%`}</span>
                 </div>
               </div>
               <div className="prob-names">
-                <span style={{ width: `${data.winAway}%` }}>{data.away.name}</span>
-                <span style={{ width: `${data.winHome}%` }}>{data.home.name}</span>
+                <span style={{ width: `${pick ? shown.winAway : 50}%` }}>{data.away.name}</span>
+                <span style={{ width: `${pick ? shown.winHome : 50}%` }}>{data.home.name}</span>
               </div>
-              <p className="prob-note">Probabilidad estimada</p>
+              <p className="prob-note">{pick ? "Fuente: IA" : failed ? "La IA no respondió" : pending ? "Consultando la IA" : "Estimación orientativa, sin modelo calibrado"}</p>
             </div>
           </article>
 
-          <article className="card score-card">
+          <article className={`card score-card${pending ? " ai-wait" : ""}`}>
             <h2 className="card-h">Marcador proyectado</h2>
             <div className="card-b">
               <div className="score-row">
                 <ScoreMark abbr={data.away.abbr} name={data.away.name} />
-                <span className="score-num">{data.scoreAway}</span>
+                <span className="score-num">{pick ? shown.scoreAway : failed ? "" : pending ? "…" : shown.scoreAway}</span>
                 <span className="score-chip">
                   <span className="score-dash">-</span>
                 </span>
-                <span className="score-num">{data.scoreHome}</span>
+                <span className="score-num">{pick ? shown.scoreHome : failed ? "" : pending ? "…" : shown.scoreHome}</span>
                 <ScoreMark abbr={data.home.abbr} name={data.home.name} />
               </div>
-              <p className="score-note">{data.marginText}</p>
+              <p className="score-note">{pick ? shown.marginText : failed ? "La IA no respondió" : pending ? "Consultando la IA" : shown.marginText}</p>
             </div>
           </article>
 
-          <article className="card total-card">
+          <article className={`card total-card${pending ? " ai-wait" : ""}`}>
             <h2 className="card-h">Total de puntos proyectado</h2>
             <div className="card-b">
               <div className="total-body">
                 <div className="total-main">
-                  <div className="total-num">{data.total}</div>
+                  <div className="total-num">{pick ? shown.total : failed ? "" : pending ? "…" : shown.total}</div>
                   <div className="total-line">{data.hasLine ? `Línea actual: ${data.line}` : ""}</div>
                 </div>
                 <span className="total-rule" aria-hidden="true" />
                 <div className="ou-wrap">
                   <div className="ou over">
                     <div className="lbl">{data.hasLine ? `Más de ${data.line}` : "Más"}</div>
-                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.overProb}%` : ""}</div>
+                    <div className={`pct${data.hasLine && pick ? "" : " missing"}`}>{pick && data.hasLine ? `${shown.overProb}%` : ""}</div>
                   </div>
                   <div className="ou under">
                     <div className="lbl">{data.hasLine ? `Menos de ${data.line}` : "Menos"}</div>
-                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.underProb}%` : ""}</div>
+                    <div className={`pct${data.hasLine && pick ? "" : " missing"}`}>{pick && data.hasLine ? `${shown.underProb}%` : ""}</div>
                   </div>
                 </div>
               </div>
@@ -221,8 +260,8 @@ export function MatchupPage() {
                 </tr>
               </thead>
               <tbody>
-                <QuarterRow side={data.away} total={awayPts} tone="away" />
-                <QuarterRow side={data.home} total={homePts} tone="home" />
+                <QuarterRow side={shown.away} total={awayPts} tone="away" />
+                <QuarterRow side={shown.home} total={homePts} tone="home" />
               </tbody>
             </table>
           </article>
@@ -239,7 +278,7 @@ export function MatchupPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.markets.map((row) => (
+                {(pick ? shown.markets : data.markets).map((row) => (
                   <tr key={row.market}>
                     <td>{row.market}</td>
                     <td>{blank(row.line)}</td>
@@ -256,19 +295,37 @@ export function MatchupPage() {
           <TeamLogo abbr={data.away.abbr} name={data.away.name} className="footer-logo away" />
           <div className="footer-copy">
             <h2>Conclusión</h2>
-            <p>{data.conclusion}</p>
+            <p>{pick ? shown.conclusion : failed ? "La IA no respondió para este partido." : pending ? "Consultando la IA para la probabilidad, el marcador y el total." : data.conclusion}</p>
           </div>
           <div className="footer-notes">
             <div>
               Marcador proyectado:{" "}
               <b>
-                {titleCase(data.home.name)} {data.scoreHome} - {titleCase(data.away.name)} {data.scoreAway}
+                {pick
+                  ? `${titleCase(shown.home.name)} ${shown.scoreHome} - ${titleCase(shown.away.name)} ${shown.scoreAway}`
+                  : pending
+                    ? "Consultando la IA"
+                    : `${titleCase(data.home.name)} ${data.scoreHome} - ${titleCase(data.away.name)} ${data.scoreAway}`}
               </b>{" "}
-              | Total esperado: <b>{data.total} puntos</b>
+              | Total esperado: <b>{pick ? `${shown.total} puntos` : pending ? "…" : `${data.total} puntos`}</b>
             </div>
             <div>
-              Probabilidad de victoria: <b>{titleCase(data.home.name)} {data.winHome}%</b> |{" "}
-              <b>{titleCase(data.away.name)} {data.winAway}%</b>
+              Probabilidad de victoria:{" "}
+              <b>
+                {pick
+                  ? `${titleCase(shown.home.name)} ${shown.winHome}%`
+                  : pending
+                    ? "…"
+                    : `${titleCase(data.home.name)} ${data.winHome}%`}
+              </b>{" "}
+              |{" "}
+              <b>
+                {pick
+                  ? `${titleCase(shown.away.name)} ${shown.winAway}%`
+                  : pending
+                    ? "…"
+                    : `${titleCase(data.away.name)} ${data.winAway}%`}
+              </b>
             </div>
             <div>
               Confianza del pronóstico: <b>{data.confidence}</b>

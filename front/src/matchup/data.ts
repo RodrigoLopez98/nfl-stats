@@ -723,6 +723,72 @@ function buildSide(
   };
 }
 
+function rankScore(rank: number | null) {
+  if (rank == null) return null;
+  return clamp(((33 - rank) / 32) * 100, 0, 100);
+}
+
+function blend(values: (number | null)[]) {
+  const known = values.filter((value): value is number => value != null);
+  if (!known.length) return null;
+  return known.reduce((sum, value) => sum + value, 0) / known.length;
+}
+
+function normalCdf(z: number) {
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.SQRT2;
+  const a1 = 0.254829592;
+  const a2 = -0.284496736;
+  const a3 = 1.421413741;
+  const a4 = -1.453152027;
+  const a5 = 1.061405429;
+  const p = 0.3275911;
+  const t = 1 / (1 + p * x);
+  const erf = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return clamp(0.5 * (1 + sign * erf), 0.02, 0.98);
+}
+
+function restDays(games: SlateGame[], cutoff: SlateGame, abbr: string) {
+  const last = priorGames(games, abbr, cutoff).at(-1);
+  if (!last?.item.game.gameday || !cutoff.game.gameday) return null;
+  const previous = parseCalendarDate(last.item.game.gameday);
+  const next = parseCalendarDate(cutoff.game.gameday);
+  if (!previous || !next) return null;
+  return Math.round((next.getTime() - previous.getTime()) / 86_400_000);
+}
+
+function resultQuality(games: SlateGame[], history: ReturnType<typeof priorGames>) {
+  if (!history.length) return null;
+  const total = history.reduce((sum, entry) => {
+    const opponent = recordOf(games, entry.row.opp, entry.item);
+    const played = opponent.w + opponent.l + opponent.t;
+    const strength = played ? (opponent.w + opponent.t * 0.5) / played : 0.5;
+    const outcome = entry.row.result === "W" ? 1 : entry.row.result === "L" ? -1 : 0;
+    const margin = Math.max(-1, Math.min(1, (entry.row.scored - entry.row.allowed) / 14));
+    return sum + outcome * (0.45 + strength) * 0.7 + margin * 0.3;
+  }, 0);
+  return clamp(50 + (total / history.length) * 35, 0, 100);
+}
+
+function injuryBurden(list: Injury[]) {
+  return Math.min(
+    4,
+    list.reduce((sum, player) => {
+      const status = player.status === "Reserva" || player.status === "Fuera" || player.status === "Suspendido" ? 1 : player.status === "Dudoso" ? 0.55 : 0.2;
+      const pos = player.pos.toUpperCase();
+      const weight = pos === "QB" ? 2.2 : ["RB", "WR", "TE", "OT", "OG", "C", "G", "T", "OL"].includes(pos) ? 0.55 : ["DE", "DT", "LB", "CB", "S", "EDGE", "DL"].includes(pos) ? 0.45 : 0.25;
+      return sum + weight * status;
+    }, 0),
+  );
+}
+
+function confidenceLabel(score: number) {
+  if (score <= 2) return "muy baja";
+  if (score <= 4) return "baja";
+  if (score <= 6) return "moderada";
+  return "alta";
+}
+
 function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | undefined): MatchupData {
   const { game, week } = item;
   const allowed = pointsAllowedTable(games, item);
@@ -738,32 +804,93 @@ function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | 
   };
   const away = buildSide(games, item, game.away, rankings, allowed, yards, rates);
   const home = buildSide(games, item, game.home, rankings, allowed, yards, rates);
-  const awayPpg = game.away.ppg ?? 21;
-  const homePpg = game.home.ppg ?? 21;
-  const projected = game.projected_total != null ? Math.round(game.projected_total) : Math.round(awayPpg + homePpg);
-  const share = awayPpg + homePpg;
-  const scoreAway = share > 0 ? Math.round(projected * (awayPpg / share)) : Math.round(projected / 2);
-  const scoreHome = projected - scoreAway;
+  const awayHistory = priorGames(games, away.abbr, item);
+  const homeHistory = priorGames(games, home.abbr, item);
+  const awayRecent = awayHistory.slice(-3);
+  const homeRecent = homeHistory.slice(-3);
+  const awayAllowed = allowed.rates.get(away.abbr) ?? null;
+  const homeAllowed = allowed.rates.get(home.abbr) ?? null;
+  const recentAvg = (rows: typeof awayRecent, key: "scored" | "allowed") =>
+    rows.length ? rows.reduce((sum, entry) => sum + entry.row[key], 0) / rows.length : null;
+  const projectPoints = (offense: number | null, defense: number | null, recent: number | null) => {
+    const season = offense != null && defense != null ? offense * 0.55 + defense * 0.45 : (offense ?? defense ?? 21.5);
+    return recent == null ? season : season * 0.8 + recent * 0.2;
+  };
+  const awayBurden = injuryBurden(away.injuries);
+  const homeBurden = injuryBurden(home.injuries);
+  const awayRest = restDays(games, item, away.abbr);
+  const homeRest = restDays(games, item, home.abbr);
+  const restEdge = awayRest != null && homeRest != null ? clamp(homeRest - awayRest, -4, 4) * 0.25 : 0;
+  const weatherCut = ((game.weather_wind ?? 0) >= 30 ? 1.5 : 0) + ((game.weather_precip ?? 0) >= 55 ? 1.5 : 0) + ((game.weather_c ?? 20) <= 0 ? 1 : 0);
+  const efficiency = (abbr: string) =>
+    blend([
+      rankScore(yards.ranks.get(abbr) ?? null),
+      rankScore(rates.ypp.ranks.get(abbr) ?? null),
+      rankScore(rates.epa.ranks.get(abbr) ?? null),
+      rankScore(allowed.ranks.get(abbr) ?? null),
+      rankScore(rates.sacks.ranks.get(abbr) ?? null),
+      rankScore(rates.interceptions.ranks.get(abbr) ?? null),
+      rankScore(rates.hits.ranks.get(abbr) ?? null),
+      rankScore(rates.giveaways.ranks.get(abbr) ?? null),
+    ]);
+  const awayEff = efficiency(away.abbr);
+  const homeEff = efficiency(home.abbr);
+  const awaySched = resultQuality(games, awayHistory);
+  const homeSched = resultQuality(games, homeHistory);
+  const awayRecentQ = resultQuality(games, awayRecent);
+  const homeRecentQ = resultQuality(games, homeRecent);
+  const tactical = blend(
+    game.categories.map((category) =>
+      category.away_rank == null || category.home_rank == null ? null : rankScore(category.away_rank)! - rankScore(category.home_rank)!,
+    ),
+  );
+  const pieces = [
+    { weight: 25, diff: awayEff != null && homeEff != null ? homeEff - awayEff : null },
+    { weight: 15, diff: tactical == null ? null : -tactical },
+    { weight: 15, diff: awaySched != null && homeSched != null ? homeSched - awaySched : null },
+    { weight: 10, diff: awayRecentQ != null && homeRecentQ != null ? homeRecentQ - awayRecentQ : null },
+  ];
+  const usedWeight = pieces.reduce((sum, piece) => (piece.diff == null ? sum : sum + piece.weight), 0);
+  const ratingEdge = usedWeight
+    ? pieces.reduce((sum, piece) => (piece.diff == null ? sum : sum + piece.diff * piece.weight), 0) / usedWeight / 12
+    : 0;
+  let rawAway = projectPoints(game.away.ppg, homeAllowed, recentAvg(awayRecent, "scored")) - awayBurden;
+  let rawHome = projectPoints(game.home.ppg, awayAllowed, recentAvg(homeRecent, "scored")) - homeBurden + 1.2 + restEdge + ratingEdge;
+  if (weatherCut) {
+    rawAway -= weatherCut / 2;
+    rawHome -= weatherCut / 2;
+  }
+  const scoreAway = Math.max(6, Math.round(rawAway));
+  const scoreHome = Math.max(6, Math.round(rawHome));
   away.quarters = splitQuarters(scoreAway);
   home.quarters = splitQuarters(scoreHome);
   const total = scoreAway + scoreHome;
   const bookLine = game.book_total ?? game.api_total;
   const hasLine = bookLine != null;
   const line = bookLine ?? total;
-  const overProb = hasLine ? clamp(Math.round(50 + (total - line) * 3), 35, 68) : 50;
-  const underProb = 100 - overProb;
-  const playedAway = game.away.wins + game.away.losses + game.away.ties;
-  const playedHome = game.home.wins + game.home.losses + game.home.ties;
-  const awayPct = playedAway ? (game.away.wins + game.away.ties * 0.5) / playedAway : 0.5;
-  const homePct = playedHome ? (game.home.wins + game.home.ties * 0.5) / playedHome : 0.5;
-  const cats = game.rank_away + game.rank_home;
-  const catEdge = cats ? (game.rank_home - game.rank_away) / cats : 0;
-  const winHome = clamp(Math.round((0.5 + (homePct - awayPct) * 0.28 + catEdge * 0.22 + 0.03) * 100), 34, 70);
+  const spread = game.spread ?? game.api_spread;
+  const homeMargin = scoreHome - scoreAway;
+  const winHome = Math.round(normalCdf(homeMargin / 13.5) * 100);
   const winAway = 100 - winHome;
-  const margin = scoreHome - scoreAway;
-  const favorite = margin === 0 ? null : margin > 0 ? home : away;
+  const homeCover = spread == null ? null : Math.round(normalCdf((homeMargin + spread) / 13.5) * 100);
+  const awayCover = homeCover == null ? null : 100 - homeCover;
+  const overProb = hasLine ? Math.round(normalCdf((total - line) / 11) * 100) : 50;
+  const underProb = 100 - overProb;
+  const factorsUsed = [awayEff, homeEff, awaySched, homeSched, tactical].filter((value) => value != null).length;
+  let confidenceScore = 5;
+  if (awayHistory.length >= 4 && homeHistory.length >= 4) confidenceScore += 1;
+  if (awayHistory.length < 2 || homeHistory.length < 2) confidenceScore -= 2;
+  if (Math.abs(homeMargin) >= 6) confidenceScore += 1;
+  if (Math.abs(homeMargin) < 2) confidenceScore -= 1;
+  if (factorsUsed < 3) confidenceScore -= 1;
+  const uncertain = [...away.injuries, ...home.injuries].filter((player) => player.status === "Cuestionable" || player.status === "Dudoso").length;
+  if (uncertain >= 4) confidenceScore -= 1;
+  confidenceScore = clamp(confidenceScore, 2, 8);
+  const confidenceWord = confidenceLabel(confidenceScore);
+  const favorite = homeMargin === 0 ? null : homeMargin > 0 ? home : away;
+  const marginAbs = Math.abs(homeMargin);
   const marginText = favorite
-    ? `Diferencia esperada: ${pretty(favorite.name)} por ${Math.abs(margin)} puntos`
+    ? `Diferencia esperada: ${pretty(favorite.name)} por ${marginAbs} ${marginAbs === 1 ? "punto" : "puntos"}`
     : "Empate proyectado";
   const awayCode = normalizeTeamAbbr(game.away.abbr);
   const homeCode = normalizeTeamAbbr(game.home.abbr);
@@ -817,14 +944,8 @@ function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | 
     : [MISSING];
   const combined = (game.away.ppg ?? 0) + (game.home.ppg ?? 0);
   const pace = combined >= 48 ? "Alto" : combined >= 42 ? "Medio-alto" : combined >= 36 ? "Medio" : "Bajo";
-  const spread = game.spread ?? game.api_spread;
-  const awayCover = spread == null ? 50 : clamp(Math.round(50 + (scoreAway - scoreHome - spread) * 3), 35, 65);
-  const homeCover = 100 - awayCover;
-  const overValue = total - line >= 1.5 ? "Valor" : total - line >= 0.5 ? "Ligero valor" : "Neutral";
-  const underValue = line - total >= 1.5 ? "Valor" : line - total >= 0.5 ? "Ligero valor" : "Neutral";
-  const edge = Math.abs(winHome - winAway);
-  const confidenceScore = edge >= 24 ? 8 : edge >= 16 ? 7 : edge >= 8 ? 6 : 5;
-  const confidenceWord = confidenceScore >= 8 ? "alta" : confidenceScore >= 6 ? "moderada" : "baja";
+  const overValue = !hasLine ? MISSING : total - line >= 2 ? "Valor" : total - line >= 1 ? "Ligero valor" : "Neutral";
+  const underValue = !hasLine ? MISSING : line - total >= 2 ? "Valor" : line - total >= 1 ? "Ligero valor" : "Neutral";
   const leader = winHome >= winAway ? home : away;
   const trailer = leader === home ? away : home;
   const leaderPct = leader === home ? winHome : winAway;
@@ -860,46 +981,50 @@ function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | 
         market: `Ganador - ${pretty(away.name)}`,
         line: moneyLabel(game.away_moneyline),
         prob: `${winAway}%`,
-        value: marketEdge(winAway, game.away_moneyline).text,
-        valueTone: marketEdge(winAway, game.away_moneyline).tone,
+        value: confidenceScore < 5 ? MISSING : marketEdge(winAway, game.away_moneyline).text,
+        valueTone: confidenceScore < 5 ? "muted" : marketEdge(winAway, game.away_moneyline).tone,
       },
       {
         market: `Ganador - ${pretty(home.name)}`,
         line: moneyLabel(game.home_moneyline),
         prob: `${winHome}%`,
-        value: marketEdge(winHome, game.home_moneyline).text,
-        valueTone: marketEdge(winHome, game.home_moneyline).tone,
+        value: confidenceScore < 5 ? MISSING : marketEdge(winHome, game.home_moneyline).text,
+        valueTone: confidenceScore < 5 ? "muted" : marketEdge(winHome, game.home_moneyline).tone,
       },
       {
         market: `Hándicap - ${pretty(away.name)}`,
         line: spread == null ? MISSING : formatSpread(-spread),
         prob: spread == null ? MISSING : `${awayCover}%`,
-        value: spread == null ? MISSING : awayCover >= 53 ? "Ligero valor" : "Neutral",
-        valueTone: spread != null && awayCover >= 53 ? "green" : "muted",
+        value: spread == null || confidenceScore < 5 ? MISSING : awayCover != null && awayCover >= 55 ? "Ligero valor" : "Neutral",
+        valueTone: spread != null && confidenceScore >= 5 && awayCover != null && awayCover >= 55 ? "green" : "muted",
       },
       {
         market: `Hándicap - ${pretty(home.name)}`,
         line: spread == null ? MISSING : formatSpread(spread),
         prob: spread == null ? MISSING : `${homeCover}%`,
-        value: spread == null ? MISSING : homeCover >= 53 ? "Ligero valor" : "Neutral",
-        valueTone: spread != null && homeCover >= 53 ? "green" : "muted",
+        value: spread == null || confidenceScore < 5 ? MISSING : homeCover != null && homeCover >= 55 ? "Ligero valor" : "Neutral",
+        valueTone: spread != null && confidenceScore >= 5 && homeCover != null && homeCover >= 55 ? "green" : "muted",
       },
       {
         market: hasLine ? `Total - Más de ${lineText(line)}` : "Total - Más",
         line: hasLine ? lineText(line) : MISSING,
         prob: hasLine ? `${overProb}%` : MISSING,
-        value: hasLine ? overValue : MISSING,
-        valueTone: !hasLine || overValue === "Neutral" ? "muted" : "green",
+        value: !hasLine || confidenceScore < 5 ? MISSING : overValue,
+        valueTone: !hasLine || confidenceScore < 5 || overValue === "Neutral" ? "muted" : "green",
       },
       {
         market: hasLine ? `Total - Menos de ${lineText(line)}` : "Total - Menos",
         line: hasLine ? lineText(line) : MISSING,
         prob: hasLine ? `${underProb}%` : MISSING,
-        value: hasLine ? underValue : MISSING,
-        valueTone: !hasLine || underValue === "Neutral" ? "muted" : "green",
+        value: !hasLine || confidenceScore < 5 ? MISSING : underValue,
+        valueTone: !hasLine || confidenceScore < 5 || underValue === "Neutral" ? "muted" : "green",
       },
     ],
-    conclusion: `Ventaja para ${pretty(leader.name)} (${leaderPct}%). ${pretty(trailer.name)} llega con récord ${trailer.record}. La proyección es ${scoreAway}-${scoreHome} de visitante a local, con un total de ${total} puntos.`,
+    conclusion: `Estimación orientativa: ${pretty(leader.name)} ${leaderPct}%, marcador ${scoreAway}-${scoreHome} y total de ${total} puntos. Confianza ${confidenceWord} (${confidenceScore}/10). ${
+      confidenceScore <= 4 || Math.abs(homeMargin) < 3
+        ? "No hay una ventaja lo bastante sólida para una apuesta."
+        : `${pretty(trailer.name)} llega con récord ${trailer.record}. El reporte de inactivos puede mover el marcador.`
+    }`,
     notes: [],
   };
 }
@@ -936,6 +1061,133 @@ export function formatCompare(value: number | null, row: CompareRow) {
   if (value == null) return "No encontrado";
   const text = row.digits === 0 ? String(Math.round(value)) : value.toFixed(row.digits);
   return `${text}${row.suffix ?? ""}`;
+}
+
+export type AiPick = {
+  winAway: number;
+  winHome: number;
+  scoreAway: number;
+  scoreHome: number;
+  overProb: number;
+  underProb: number;
+  margin: string;
+};
+
+function parseLine(line: string) {
+  if (!line || line === MISSING) return null;
+  const match = line.match(/[+-]?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function sideFacts(team: TeamSide) {
+  const games = team.schedule
+    .map((row) => `semana ${row.week} ${row.away ? "de visita" : "en casa"} ante ${row.opp} ${row.result} ${row.score}, rival ${row.oppRecord}`)
+    .join("; ");
+  const stats = [...team.offense, ...team.defense]
+    .filter((stat) => stat.value !== MISSING)
+    .map((stat) => `${stat.label} ${stat.value}${stat.rank != null ? ` (${stat.rank}°)` : ""}`)
+    .join(", ");
+  const injuries = team.injuries
+    .map((player) => {
+      const note = player.impact && player.impact !== MISSING ? `, ${player.impact}` : "";
+      return `${player.name} ${player.pos} ${player.status}${note}`;
+    })
+    .join("; ");
+  return [
+    `${pretty(team.name)} récord ${team.record} ${team.split}.`,
+    team.rivalsRecord !== MISSING ? `Récord combinado de los rivales recientes: ${team.rivalsRecord}.` : "",
+    games ? `Resultados: ${games}.` : "",
+    team.trendRecord !== MISSING ? `Últimos tres: ${team.trendRecord}, anota ${team.trendScored}, permite ${team.trendAllowed}.` : "",
+    stats ? `Temporada: ${stats}.` : "",
+    injuries ? `Disponibilidad: ${injuries}.` : "Sin bajas listadas.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function forecastBrief(data: MatchupData) {
+  const compare = data.compare
+    .filter((row) => row.away != null || row.home != null)
+    .map((row) => `${row.label}: visita ${row.away ?? "sin dato"}, local ${row.home ?? "sin dato"}`)
+    .join("\n");
+  const context = data.factors
+    .map((factor) => {
+      if (factor.value && factor.value !== MISSING) return `${factor.label}: ${factor.value}`;
+      const bullets = (factor.bullets ?? []).filter((item) => item !== MISSING);
+      return bullets.length ? `${factor.label}: ${bullets.join("; ")}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  const lines = data.markets
+    .filter((row) => row.line && row.line !== MISSING)
+    .map((row) => `${row.market}: ${row.line}`)
+    .join("\n");
+  return [
+    `Partido de la semana ${data.weekLabel}: ${pretty(data.away.name)} visita a ${pretty(data.home.name)}.`,
+    `${data.dateLine}. ${data.timeLine}. ${data.stadium}.`,
+    `Visitante. ${sideFacts(data.away)}`,
+    `Local. ${sideFacts(data.home)}`,
+    compare ? `Comparación:\n${compare}` : "",
+    context ? `Contexto:\n${context}` : "",
+    lines ? `Líneas publicadas, no son el pronóstico:\n${lines}` : "No hay línea de puntos publicada.",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 7500);
+}
+
+export function applyAiForecast(data: MatchupData, ai: AiPick): MatchupData {
+  const scoreAway = ai.scoreAway;
+  const scoreHome = ai.scoreHome;
+  const total = scoreAway + scoreHome;
+  const diff = Math.abs(scoreHome - scoreAway);
+  const favorite = diff === 0 ? null : scoreHome > scoreAway ? data.home : data.away;
+  const marginText = favorite
+    ? `Diferencia esperada: ${pretty(favorite.name)} por ${diff} ${diff === 1 ? "punto" : "puntos"}`
+    : "Empate proyectado";
+  const leader = ai.winHome >= ai.winAway ? data.home : data.away;
+  const trailer = leader === data.home ? data.away : data.home;
+  const leaderPct = leader === data.home ? ai.winHome : ai.winAway;
+  const awayLabel = pretty(data.away.name);
+  const homeLabel = pretty(data.home.name);
+  const homeSpread = parseLine(data.markets.find((row) => row.market === `Hándicap - ${homeLabel}`)?.line ?? "");
+  const homeCover = homeSpread == null ? null : Math.round(normalCdf((scoreHome - scoreAway + homeSpread) / 13.5) * 100);
+  const awayCover = homeCover == null ? null : 100 - homeCover;
+  const awayEdge = marketEdge(ai.winAway, parseLine(data.markets.find((row) => row.market === `Ganador - ${awayLabel}`)?.line ?? ""));
+  const homeEdge = marketEdge(ai.winHome, parseLine(data.markets.find((row) => row.market === `Ganador - ${homeLabel}`)?.line ?? ""));
+  const overValue = !data.hasLine ? MISSING : total - data.line >= 2 ? "Valor" : total - data.line >= 1 ? "Ligero valor" : "Neutral";
+  const underValue = !data.hasLine ? MISSING : data.line - total >= 2 ? "Valor" : data.line - total >= 1 ? "Ligero valor" : "Neutral";
+  const tone = (value: string) => (value === "Neutral" || value === MISSING ? ("muted" as const) : ("green" as const));
+  const markets = data.markets.map((row) => {
+    if (row.market === `Ganador - ${awayLabel}`) return { ...row, prob: `${ai.winAway}%`, value: awayEdge.text, valueTone: awayEdge.tone };
+    if (row.market === `Ganador - ${homeLabel}`) return { ...row, prob: `${ai.winHome}%`, value: homeEdge.text, valueTone: homeEdge.tone };
+    if (row.market === `Hándicap - ${awayLabel}` && awayCover != null) {
+      return { ...row, prob: `${awayCover}%`, value: awayCover >= 55 ? "Ligero valor" : "Neutral", valueTone: awayCover >= 55 ? ("green" as const) : ("muted" as const) };
+    }
+    if (row.market === `Hándicap - ${homeLabel}` && homeCover != null) {
+      return { ...row, prob: `${homeCover}%`, value: homeCover >= 55 ? "Ligero valor" : "Neutral", valueTone: homeCover >= 55 ? ("green" as const) : ("muted" as const) };
+    }
+    if (row.market.startsWith("Total - Más")) return { ...row, prob: data.hasLine ? `${ai.overProb}%` : row.prob, value: overValue, valueTone: tone(overValue) };
+    if (row.market.startsWith("Total - Menos")) return { ...row, prob: data.hasLine ? `${ai.underProb}%` : row.prob, value: underValue, valueTone: tone(underValue) };
+    return row;
+  });
+  return {
+    ...data,
+    away: { ...data.away, quarters: splitQuarters(scoreAway) },
+    home: { ...data.home, quarters: splitQuarters(scoreHome) },
+    winAway: ai.winAway,
+    winHome: ai.winHome,
+    scoreAway,
+    scoreHome,
+    marginText,
+    total,
+    overProb: ai.overProb,
+    underProb: ai.underProb,
+    markets,
+    conclusion: `Fuente IA: ${pretty(leader.name)} ${leaderPct}%, marcador ${scoreAway}-${scoreHome} y total de ${total} puntos. ${
+      diff < 3 ? "El margen es corto." : `${pretty(trailer.name)} llega con récord ${trailer.record}.`
+    }`,
+  };
 }
 
 export function rankTone(rank: number) {

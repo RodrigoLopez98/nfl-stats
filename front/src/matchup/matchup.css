@@ -402,6 +402,12 @@
   color: #a6a6a6;
 }
 
+.card.ai-wait .pct,
+.card.ai-wait .score-num,
+.card.ai-wait .total-num {
+  color: #98a2b3;
+}
+
 .score-card .card-h {
   background: #1e2c3c;
   padding: 9px 12px 8px;

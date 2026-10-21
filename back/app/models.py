@@ -109,6 +109,21 @@ class InjuryReport(Base):
     detail: Mapped[str | None] = mapped_column(String(180), nullable=True)
 
 
+class AiForecast(Base):
+    __tablename__ = "ai_forecasts"
+
+    game_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    brief_hash: Mapped[str] = mapped_column(String(64))
+    win_away: Mapped[int] = mapped_column(Integer)
+    win_home: Mapped[int] = mapped_column(Integer)
+    score_away: Mapped[int] = mapped_column(Integer)
+    score_home: Mapped[int] = mapped_column(Integer)
+    over_prob: Mapped[int] = mapped_column(Integer)
+    under_prob: Mapped[int] = mapped_column(Integer)
+    margin: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SyncLog(Base):
     __tablename__ = "sync_logs"
 

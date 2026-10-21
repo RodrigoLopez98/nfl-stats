@@ -13,9 +13,21 @@ from app.board import (
     week_bundle,
 )
 from app.database import get_db
+from app.forecast import forecast_game
 from app.ingest import sync_season
 from app.models import BankrollLine, Game, SlateEntry
-from app.schemas import BankrollIn, BankrollLineOut, BoardOut, DashboardOut, RankingsOut, SlateIn, StatusOut, WeekBundleOut
+from app.schemas import (
+    BankrollIn,
+    BankrollLineOut,
+    BoardOut,
+    DashboardOut,
+    ForecastIn,
+    ForecastOut,
+    RankingsOut,
+    SlateIn,
+    StatusOut,
+    WeekBundleOut,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -69,6 +81,20 @@ def save_slate(game_id: str, body: SlateIn, db: Session = Depends(get_db)):
         setattr(entry, field, value)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/forecast", response_model=ForecastOut)
+def post_forecast(body: ForecastIn, db: Session = Depends(get_db)):
+    row = forecast_game(db, body.game_id.strip(), body.brief.strip())
+    return ForecastOut(
+        win_away=row.win_away,
+        win_home=row.win_home,
+        score_away=row.score_away,
+        score_home=row.score_home,
+        over_prob=row.over_prob,
+        under_prob=row.under_prob,
+        margin=row.margin,
+    )
 
 
 @router.post("/sync")

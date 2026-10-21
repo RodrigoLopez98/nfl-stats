@@ -128,6 +128,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
+export type AiForecast = {
+  win_away: number;
+  win_home: number;
+  score_away: number;
+  score_home: number;
+  over_prob: number;
+  under_prob: number;
+  margin: string;
+};
+
 export const api = {
   status: (season: number) => request<Status>(`/api/status?season=${season}`),
   dashboard: (season: number, week?: number) =>
@@ -144,4 +154,10 @@ export const api = {
   addBankroll: (body: Record<string, unknown>) =>
     request<BankrollLine[]>("/api/bankroll", { method: "POST", body: JSON.stringify(body) }),
   deleteBankroll: (id: number) => request<BankrollLine[]>(`/api/bankroll/${id}`, { method: "DELETE" }),
+  forecast: (gameId: string, brief: string, signal?: AbortSignal) =>
+    request<AiForecast>("/api/forecast", {
+      method: "POST",
+      body: JSON.stringify({ game_id: gameId, brief }),
+      signal,
+    }),
 };
