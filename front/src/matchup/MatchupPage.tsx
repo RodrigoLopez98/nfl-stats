@@ -149,17 +149,17 @@ export function MatchupPage() {
               <div className="total-body">
                 <div className="total-main">
                   <div className="total-num">{data.total}</div>
-                  <div className="total-line">{data.hasLine ? `Línea actual: ${data.line}` : "No encontrado"}</div>
+                  <div className="total-line">{data.hasLine ? `Línea actual: ${data.line}` : ""}</div>
                 </div>
                 <span className="total-rule" aria-hidden="true" />
                 <div className="ou-wrap">
                   <div className="ou over">
                     <div className="lbl">{data.hasLine ? `Más de ${data.line}` : "Más"}</div>
-                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.overProb}%` : "No encontrado"}</div>
+                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.overProb}%` : ""}</div>
                   </div>
                   <div className="ou under">
                     <div className="lbl">{data.hasLine ? `Menos de ${data.line}` : "Menos"}</div>
-                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.underProb}%` : "No encontrado"}</div>
+                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.underProb}%` : ""}</div>
                   </div>
                 </div>
               </div>
@@ -242,9 +242,9 @@ export function MatchupPage() {
                 {data.markets.map((row) => (
                   <tr key={row.market}>
                     <td>{row.market}</td>
-                    <td>{row.line}</td>
-                    <td className={row.probTone ? `tone-${row.probTone}` : undefined}>{row.prob}</td>
-                    <td className={row.valueTone ? `tone-${row.valueTone}` : undefined}>{row.value}</td>
+                    <td>{blank(row.line)}</td>
+                    <td className={row.probTone ? `tone-${row.probTone}` : undefined}>{blank(row.prob)}</td>
+                    <td className={row.valueTone ? `tone-${row.valueTone}` : undefined}>{blank(row.value)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -330,6 +330,12 @@ function TeamBanner({ side, align }: { side: TeamSide; align: "away" | "home" })
   );
 }
 
+const MISSING = "No encontrado";
+
+function blank(value: string) {
+  return value === MISSING ? "" : value;
+}
+
 function splitStat(value: string) {
   const match = value.match(/^(.*?)\s*(\([^)]*\))\s*$/);
   if (!match) return { main: value, pct: "" };
@@ -358,30 +364,28 @@ function ScheduleCard({ side, tone }: { side: TeamSide; tone: "red" | "navy" }) 
         <tbody>
           {side.schedule.length ? (
             side.schedule.map((row) => <ScheduleLine key={`${side.abbr}-${row.week}-${row.oppAbbr}`} row={row} />)
-          ) : (
-            <tr>
-              <td className="sched-empty" colSpan={4}>
-                No encontrado
-              </td>
-            </tr>
-          )}
+          ) : null}
         </tbody>
       </table>
       <div className="rec-foot">
-        <div className="rec-foot-row">
-          <span>Récord combinado de rivales</span>
-          <span className="rec-foot-stat">
-            <b>{rivals.main}</b>
-            <span className="pct">{rivals.pct}</span>
-          </span>
-        </div>
-        <div className="rec-foot-row">
-          <span>Récord de equipos que derrotó</span>
-          <span className="rec-foot-stat">
-            <b>{beaten.main}</b>
-            <span className="pct">{beaten.pct}</span>
-          </span>
-        </div>
+        {rivals.main !== MISSING && (
+          <div className="rec-foot-row">
+            <span>Récord combinado de rivales</span>
+            <span className="rec-foot-stat">
+              <b>{rivals.main}</b>
+              <span className="pct">{rivals.pct}</span>
+            </span>
+          </div>
+        )}
+        {beaten.main !== MISSING && (
+          <div className="rec-foot-row">
+            <span>Récord de equipos que derrotó</span>
+            <span className="rec-foot-stat">
+              <b>{beaten.main}</b>
+              <span className="pct">{beaten.pct}</span>
+            </span>
+          </div>
+        )}
       </div>
     </article>
   );
@@ -417,13 +421,15 @@ function CompareMark({ abbr, name }: { abbr: string; name: string }) {
 function CompareTable({ rows }: { rows: CompareRow[] }) {
   return (
     <div className="cmp">
-      {rows.map((row) => {
+      {rows
+        .filter((row) => row.away != null || row.home != null)
+        .map((row) => {
         const known = [row.away, row.home].filter((value): value is number => value != null);
         const max = Math.max(...known, 1);
         const width = (value: number | null) => (value == null ? 0 : `${(value / max) * 100}%`);
         return (
           <div className="cmp-row" key={row.label}>
-            <span className={`cmp-val away${row.away == null ? " missing" : ""}`}>{formatCompare(row.away, row)}</span>
+            <span className={`cmp-val away${row.away == null ? " missing" : ""}`}>{row.away == null ? "" : formatCompare(row.away, row)}</span>
             <span className="cmp-bar-slot away">
               {row.away != null && <i style={{ width: width(row.away) }} />}
             </span>
@@ -431,7 +437,7 @@ function CompareTable({ rows }: { rows: CompareRow[] }) {
             <span className="cmp-bar-slot home">
               {row.home != null && <i style={{ width: width(row.home) }} />}
             </span>
-            <span className={`cmp-val home${row.home == null ? " missing" : ""}`}>{formatCompare(row.home, row)}</span>
+            <span className={`cmp-val home${row.home == null ? " missing" : ""}`}>{row.home == null ? "" : formatCompare(row.home, row)}</span>
           </div>
         );
       })}
@@ -468,17 +474,23 @@ function RankBadge({ rank }: { rank: number | null }) {
 }
 
 function RankCard({ title, tone, stats }: { title: string; tone: "red" | "navy"; stats: TeamSide["offense"] }) {
+  const visible = stats.filter((stat) => stat.value !== MISSING);
+  const place = stats.find((stat) => stat.label === "Puntos")?.rank ?? null;
   return (
     <article className="card rank-card">
       <h2 className={`card-h ${tone}`}>
-        {title} <span className="h-note">(Ranking NFL)</span>
+        {title}
+        {place != null && <span className="h-note">{place}°</span>}
       </h2>
-      <div className="rank-grid">
-        {stats.map((stat) => (
+      <div className={`rank-grid n-${visible.length}`}>
+        {visible.map((stat) => (
           <div key={stat.label}>
-            <div className="lbl">{stat.label}</div>
-            <RankBadge rank={stat.rank} />
-            <div className={`rank-value${stat.rank == null ? " missing" : ""}`}>{stat.value}</div>
+            <div className="lbl">
+              {stat.label}
+              {stat.rank != null && <span className="lbl-rank">{stat.rank}°</span>}
+            </div>
+            {stat.rank != null && <RankBadge rank={stat.rank} />}
+            <div className="rank-value">{stat.value}</div>
           </div>
         ))}
       </div>
@@ -510,13 +522,7 @@ function InjuryCard({ side, tone }: { side: TeamSide; tone: "red" | "navy" }) {
         <tbody>
           {side.injuries.length ? (
             side.injuries.map((player) => <InjuryLine key={player.name} player={player} />)
-          ) : (
-            <tr>
-              <td className="inj-empty" colSpan={4}>
-                No encontrado
-              </td>
-            </tr>
-          )}
+          ) : null}
         </tbody>
       </table>
     </article>
@@ -535,10 +541,12 @@ function InjuryLine({ player }: { player: Injury }) {
       <td className="pos">{player.pos}</td>
       <td className={`st-${player.status}`}>{player.status}</td>
       <td>
-        <span className={`impact ${tone}`} title={player.impact === "No encontrado" ? undefined : player.impact}>
-          {rated && <Star size={12} fill="currentColor" stroke="currentColor" />}
-          {player.impact}
-        </span>
+        {player.impact !== MISSING && (
+          <span className={`impact ${tone}`} title={player.impact}>
+            {rated && <Star size={12} fill="currentColor" stroke="currentColor" />}
+            {player.impact}
+          </span>
+        )}
       </td>
     </tr>
   );
@@ -556,8 +564,11 @@ function FactorMark({ icon, abbr, name }: { icon: Factor["icon"]; abbr: string; 
 function FactorList({ factors, home }: { factors: Factor[]; home: TeamSide }) {
   return (
     <div className="factors">
-      {factors.map((factor) => {
+      {factors
+        .filter((factor) => (factor.bullets ? factor.bullets.some((item) => item !== MISSING) : factor.value !== MISSING))
+        .map((factor) => {
         const Icon = FACTOR_ICONS[factor.icon];
+        const bullets = factor.bullets?.filter((item) => item !== MISSING);
         return (
           <div className="factor" key={factor.label}>
             <span className="factor-ico">
@@ -565,9 +576,9 @@ function FactorList({ factors, home }: { factors: Factor[]; home: TeamSide }) {
             </span>
             <b>{factor.label}</b>
             <FactorMark icon={factor.icon} abbr={home.abbr} name={home.name} />
-            {factor.bullets ? (
+            {bullets ? (
               <ul>
-                {factor.bullets.map((item) => (
+                {bullets.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
@@ -593,11 +604,15 @@ function TrendCol({ side }: { side: TeamSide }) {
       <div className="trend-body">
         <TrendMark abbr={side.abbr} name={side.name} />
         <div className="trend-copy">
-          <div className="trend-rec">{record}</div>
+          {side.trendRecord !== MISSING && <div className="trend-rec">{record}</div>}
           <div className="trend-meta">
-            Promedio anotado: {side.trendScored}
-            <br />
-            Promedio permitido: {side.trendAllowed}
+            {side.trendScored !== MISSING && (
+              <>
+                Promedio anotado: {side.trendScored}
+                <br />
+              </>
+            )}
+            {side.trendAllowed !== MISSING && <>Promedio permitido: {side.trendAllowed}</>}
           </div>
           <div className="pills">
             {side.form.map((mark, index) => (
