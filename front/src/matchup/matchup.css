@@ -1684,6 +1684,442 @@
   to { transform: rotate(270deg); }
 }
 
+@media (max-width: 1199px) {
+  .hero {
+    aspect-ratio: auto;
+    height: 112px;
+    min-height: 112px;
+  }
+
+  .hero-logo {
+    height: 68px;
+    max-height: 68px;
+  }
+
+  .hero-logo.bears-c {
+    height: 56px;
+    max-height: 56px;
+  }
+
+  .hero-edge.away {
+    gap: 12px;
+    padding-left: 16px;
+  }
+
+  .hero-edge.home {
+    gap: 10px;
+    padding-right: 14px;
+  }
+
+  .hero-copy .city {
+    font-size: 13px;
+  }
+
+  .hero-copy .nick {
+    margin-top: 2px;
+    font-size: 28px;
+  }
+
+  .hero-copy .rec {
+    margin-top: 4px;
+    font-size: 14px;
+  }
+
+  .hero-center {
+    padding-top: 8px;
+  }
+
+  .nfl-mark {
+    height: 26px;
+    margin-bottom: 4px;
+  }
+
+  .hero-center .week {
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+
+  .hero-center .date,
+  .hero-center .time {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .hero-center .date {
+    margin-bottom: 1px;
+  }
+
+  .hero-center .time {
+    margin-bottom: 2px;
+  }
+
+  .hero-center .stadium {
+    font-size: 11px;
+  }
+
+  .cols-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mp-board > section.cols-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mp-board > section.cols-3:nth-child(1) > .total-card,
+  .mp-board > section.cols-3:nth-child(2) > .cmp-card,
+  .mp-board > section.cols-3:nth-child(4) > .factor-card,
+  .mp-board > section.cols-3:nth-child(5) > .trend-card {
+    grid-column: 1 / -1;
+  }
+
+  .mp-board > section.cols-3:nth-child(2) > .cmp-card {
+    order: -1;
+  }
+
+  .total-card .card-b {
+    justify-content: center;
+  }
+
+  .total-body {
+    width: auto;
+    justify-content: center;
+    gap: 32px;
+  }
+
+  .q-card,
+  .m-card {
+    height: auto;
+    min-height: 0;
+  }
+
+  .q-card .qtable,
+  .m-card .mtable {
+    flex: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+
+  .score-card .card-b {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .score-row {
+    gap: 10px;
+  }
+
+  .score-logo {
+    height: 44px;
+    max-height: 44px;
+  }
+
+  .score-logo.bears {
+    height: 38px;
+    max-height: 38px;
+  }
+
+  .score-num {
+    font-size: 44px;
+  }
+
+  .score-chip {
+    width: 46px;
+    height: 42px;
+  }
+
+  .footer {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "away copy home"
+      "notes notes notes";
+    row-gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .footer > .footer-logo:not(.bears) {
+    grid-area: away;
+  }
+
+  .footer-copy {
+    grid-area: copy;
+  }
+
+  .footer-notes {
+    grid-area: notes;
+  }
+
+  .footer-logo.bears {
+    grid-area: home;
+  }
+
+  .footer p {
+    max-width: none;
+  }
+}
+
+@media (max-width: 719px) {
+  .mp-board {
+    padding: 8px 10px 0;
+    gap: 10px;
+  }
+
+  .hero {
+    position: static;
+    height: auto;
+    min-height: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    row-gap: 8px;
+    padding: 8px 12px 10px;
+  }
+
+  .hero-center {
+    position: static;
+    transform: none;
+    order: -1;
+    flex: 1 0 100%;
+    width: 100%;
+    height: auto;
+    padding: 2px 0 4px;
+  }
+
+  .hero-edge,
+  .hero-edge.away,
+  .hero-edge.home {
+    flex: 1 1 46%;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    justify-content: center;
+    gap: 8px;
+    padding: 0;
+  }
+
+  .hero-logo,
+  .hero-logo.bears-c {
+    height: 44px;
+    max-height: 44px;
+  }
+
+  .hero-copy .city {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  .hero-copy .nick {
+    font-size: 20px;
+    letter-spacing: 0.03em;
+  }
+
+  .hero-copy .rec {
+    font-size: 13px;
+    margin-top: 2px;
+  }
+
+  .nfl-mark {
+    height: 22px;
+    margin-bottom: 3px;
+  }
+
+  .hero-center .week {
+    font-size: 15px;
+  }
+
+  .mp-board > section.cols-3,
+  .cols-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .mp-board > section.cols-3 > * {
+    grid-column: auto;
+    order: 0;
+  }
+
+  .prob-card .card-b {
+    padding: 12px 16px 10px;
+  }
+
+  .score-card .card-b,
+  .total-card .card-b {
+    padding: 12px 14px;
+  }
+
+  .score-row {
+    gap: 8px;
+  }
+
+  .score-logo {
+    height: 40px;
+    max-height: 40px;
+  }
+
+  .score-logo.bears {
+    height: 34px;
+    max-height: 34px;
+  }
+
+  .score-num {
+    font-size: 42px;
+  }
+
+  .score-chip {
+    width: 42px;
+    height: 38px;
+  }
+
+  .score-note {
+    margin-top: 8px;
+  }
+
+  .total-body {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 14px;
+  }
+
+  .total-main {
+    min-width: 0;
+    flex: 1 0 100%;
+  }
+
+  .total-num {
+    font-size: 52px;
+  }
+
+  .total-rule {
+    display: none;
+  }
+
+  .ou-wrap {
+    width: 100%;
+  }
+
+  .ou {
+    min-width: 0;
+    flex: 1;
+    padding: 8px 8px 6px;
+  }
+
+  .cmp {
+    padding: 46px 6px 8px;
+    row-gap: 8px;
+  }
+
+  .cmp-label {
+    font-size: 10px;
+    padding: 0 6px;
+  }
+
+  .factors {
+    grid-template-columns: 20px minmax(72px, 0.85fr) 22px minmax(0, 1.15fr);
+    padding: 4px 10px 6px;
+  }
+
+  .factor b,
+  .factor-val,
+  .factor li {
+    white-space: normal;
+  }
+
+  .trend {
+    gap: 8px;
+    padding: 12px 8px;
+  }
+
+  .trend-logo {
+    height: 34px;
+  }
+
+  .trend-logo.bears {
+    height: 28px;
+  }
+
+  .trend-rec {
+    font-size: 24px;
+  }
+
+  .trend-meta {
+    font-size: 10px;
+  }
+
+  .sched {
+    width: calc(100% - 12px);
+    margin: 0 6px;
+  }
+
+  .sched th,
+  .sched td {
+    font-size: 11px;
+  }
+
+  .rec-foot {
+    margin: 4px 6px 6px;
+  }
+
+  .rec-foot-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    font-size: 11px;
+  }
+
+  .q-card .qtable,
+  .m-card .mtable {
+    width: calc(100% - 12px);
+    margin: 6px;
+  }
+
+  .m-card .mtable th,
+  .m-card .mtable td {
+    font-size: 11px;
+  }
+
+  .footer {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "away title home"
+      "text text text"
+      "notes notes notes";
+    align-items: center;
+    padding: 12px 14px 14px;
+    row-gap: 8px;
+  }
+
+  .footer-copy {
+    display: contents;
+  }
+
+  .footer h2 {
+    grid-area: title;
+    margin: 0;
+    font-size: 20px;
+    text-align: center;
+  }
+
+  .footer p {
+    grid-area: text;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .footer-notes {
+    grid-area: notes;
+    font-size: 12.5px;
+    gap: 4px;
+  }
+
+  .footer-logo {
+    height: 42px;
+  }
+
+  .footer-logo.bears {
+    height: 36px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mp *,
   .mp *::before,
