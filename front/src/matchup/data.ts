@@ -1,5 +1,8 @@
 import { api, type GameCard, type Rankings } from "@/api";
-import { currentNflSeason, parseCalendarDate } from "@/lib/datetime";
+import { currentNflSeason, parseCalendarDate, todayInMonterrey } from "@/lib/datetime";
+import { NFL_TEAMS } from "@/lib/nfl-teams";
+import { kickoffLabel } from "@/lib/scores-format";
+import { normalizeTeamAbbr, teamNickname } from "@/lib/team-meta";
 
 export type ScheduleRow = {
   week: number;
@@ -13,23 +16,23 @@ export type ScheduleRow = {
 
 export type CompareRow = {
   label: string;
-  away: number;
-  home: number;
+  away: number | null;
+  home: number | null;
   digits: number;
   suffix?: string;
 };
 
 export type RankStat = {
   label: string;
-  rank: number;
+  rank: number | null;
   value: string;
 };
 
 export type Injury = {
   name: string;
   pos: string;
-  status: "Probable" | "Cuestionable" | "Out" | "Dudoso";
-  impact: "Alto" | "Medio" | "Bajo";
+  status: string;
+  impact: string;
 };
 
 export type Factor = {
@@ -68,10 +71,12 @@ export type TeamSide = {
 };
 
 export type MatchupData = {
+  gameId: string;
   weekLabel: string;
   dateLine: string;
   timeLine: string;
   stadium: string;
+  confidence: string;
   away: TeamSide;
   home: TeamSide;
   winAway: number;
@@ -81,6 +86,7 @@ export type MatchupData = {
   marginText: string;
   total: number;
   line: number;
+  hasLine: boolean;
   overProb: number;
   underProb: number;
   compare: CompareRow[];
@@ -91,9 +97,12 @@ export type MatchupData = {
 };
 
 const MONTHS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+const MISSING = "No encontrado";
 
 export const IMAGE_MATCHUP: MatchupData = {
+  gameId: "atl-chi",
   weekLabel: "X",
+  confidence: "6 / 10 (moderada)",
   dateLine: "DOMINGO 18 OCT",
   timeLine: "1:00 PM (ET)",
   stadium: "Soldier Field, Chicago",
@@ -104,6 +113,7 @@ export const IMAGE_MATCHUP: MatchupData = {
   marginText: "Diferencia esperada: Bears por 3 puntos",
   total: 51,
   line: 50.5,
+  hasLine: true,
   overProb: 53,
   underProb: 47,
   away: {
@@ -250,63 +260,680 @@ function formatSpread(value: number) {
   return abs;
 }
 
-function teamRank(rankings: Rankings, abbr: string) {
-  return rankings.teams.find((team) => team.abbr.toUpperCase() === abbr);
+export type SlateGame = {
+  week: number;
+  game: GameCard;
+};
+
+export type MatchupSlate = {
+  games: SlateGame[];
+  rankingsByWeek: Record<number, Rankings>;
+  index: number;
+};
+
+type Rec = { w: number; l: number; t: number };
+
+function teamCity(abbr: string) {
+  const code = normalizeTeamAbbr(abbr);
+  return NFL_TEAMS.find((team) => team.abbr === code)?.name ?? code;
 }
 
-/** Sustituye solo cifras que la API ya calcula. El resto se queda como en la imagen. */
-function applyApi(data: MatchupData, game: GameCard, rankings: Rankings, week: number) {
-  const awayIsAtl = game.away.abbr.toUpperCase() === "ATL";
-  const falcons = awayIsAtl ? game.away : game.home;
-  const bears = awayIsAtl ? game.home : game.away;
+function nick(abbr: string) {
+  return teamNickname(abbr);
+}
 
-  data.weekLabel = String(week);
-  data.away.record = formatRecord(falcons);
-  data.home.record = formatRecord(bears);
-  if (game.gameday) data.dateLine = formatKickoff(game.gameday);
+function pretty(name: string) {
+  return name
+    .toLowerCase()
+    .split(" ")
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(" ");
+}
 
-  const falconsRank = teamRank(rankings, "ATL");
-  const bearsRank = teamRank(rankings, "CHI");
-  if (falconsRank?.ranks.points) data.away.offense[0].rank = falconsRank.ranks.points;
-  if (bearsRank?.ranks.points) data.home.offense[0].rank = bearsRank.ranks.points;
-  if (falcons.ppg != null) data.away.offense[0].value = falcons.ppg.toFixed(1);
-  if (bears.ppg != null) data.home.offense[0].value = bears.ppg.toFixed(1);
-  if (falconsRank?.ranks.sacks) data.away.defense[2].rank = falconsRank.ranks.sacks;
-  if (bearsRank?.ranks.sacks) data.home.defense[2].rank = bearsRank.ranks.sacks;
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
-  if (game.projected_total != null) data.total = Math.round(game.projected_total);
-  if (game.book_total != null) {
-    data.line = game.book_total;
-    data.markets[4].market = `Total - Más de ${game.book_total}`;
-    data.markets[5].market = `Total - Menos de ${game.book_total}`;
-    data.markets[4].line = String(game.book_total);
-    data.markets[5].line = String(game.book_total);
+function isBefore(item: SlateGame, cutoff: SlateGame) {
+  const a = item.game.gameday ?? "9999-99-99";
+  const b = cutoff.game.gameday ?? "9999-99-99";
+  if (a !== b) return a < b;
+  if (item.week !== cutoff.week) return item.week < cutoff.week;
+  return item.game.game_id < cutoff.game.game_id;
+}
+
+function playedBefore(games: SlateGame[], cutoff: SlateGame) {
+  return games.filter(
+    (item) => item.game.away_score != null && item.game.home_score != null && isBefore(item, cutoff),
+  );
+}
+
+function teamResult(item: SlateGame, abbr: string) {
+  const code = normalizeTeamAbbr(abbr);
+  const away = normalizeTeamAbbr(item.game.away.abbr) === code;
+  const home = normalizeTeamAbbr(item.game.home.abbr) === code;
+  if (!away && !home) return null;
+  const scored = away ? item.game.away_score! : item.game.home_score!;
+  const allowed = away ? item.game.home_score! : item.game.away_score!;
+  const opp = away ? item.game.home.abbr : item.game.away.abbr;
+  const result: "W" | "L" | "T" = scored > allowed ? "W" : scored < allowed ? "L" : "T";
+  return { result, scored, allowed, opp, away };
+}
+
+function recordOf(games: SlateGame[], abbr: string, cutoff: SlateGame): Rec {
+  const rec: Rec = { w: 0, l: 0, t: 0 };
+  for (const item of playedBefore(games, cutoff)) {
+    const row = teamResult(item, abbr);
+    if (!row) continue;
+    if (row.result === "W") rec.w += 1;
+    else if (row.result === "L") rec.l += 1;
+    else rec.t += 1;
   }
+  return rec;
+}
 
+function formatRec(rec: Rec, tight = false) {
+  const sep = tight ? "-" : " - ";
+  return rec.t ? `${rec.w}${sep}${rec.l}${sep}${rec.t}` : `${rec.w}${sep}${rec.l}`;
+}
+
+function recPct(rec: Rec) {
+  const games = rec.w + rec.l + rec.t;
+  if (!games) return "0 - 0 (0%)";
+  const pct = Math.round(((rec.w + rec.t * 0.5) / games) * 100);
+  return `${formatRec(rec)} (${pct}%)`;
+}
+
+function sumRecs(recs: Rec[]) {
+  return recs.reduce<Rec>((sum, rec) => ({ w: sum.w + rec.w, l: sum.l + rec.l, t: sum.t + rec.t }), { w: 0, l: 0, t: 0 });
+}
+
+function priorGames(games: SlateGame[], abbr: string, cutoff: SlateGame) {
+  return playedBefore(games, cutoff)
+    .map((item) => ({ item, row: teamResult(item, abbr) }))
+    .filter((entry): entry is { item: SlateGame; row: NonNullable<ReturnType<typeof teamResult>> } => entry.row != null)
+    .sort((a, b) => (isBefore(a.item, b.item) ? -1 : 1));
+}
+
+function rankMap(rows: { abbr: string; value: number }[], lowerIsBetter: boolean) {
+  const sorted = [...rows].sort((a, b) => (lowerIsBetter ? a.value - b.value : b.value - a.value));
+  const ranks = new Map<string, number>();
+  sorted.forEach((item, index) => {
+    const previous = sorted[index - 1];
+    if (previous && previous.value === item.value) ranks.set(item.abbr, ranks.get(previous.abbr) ?? index + 1);
+    else ranks.set(item.abbr, index + 1);
+  });
+  return ranks;
+}
+
+function pointsAllowedTable(games: SlateGame[], cutoff: SlateGame) {
+  const totals = new Map<string, { allowed: number; games: number }>();
+  for (const item of playedBefore(games, cutoff)) {
+    const bump = (abbr: string, allowed: number) => {
+      const code = normalizeTeamAbbr(abbr);
+      const row = totals.get(code) ?? { allowed: 0, games: 0 };
+      row.allowed += allowed;
+      row.games += 1;
+      totals.set(code, row);
+    };
+    bump(item.game.away.abbr, item.game.home_score ?? 0);
+    bump(item.game.home.abbr, item.game.away_score ?? 0);
+  }
+  const rows = [...totals.entries()].map(([abbr, row]) => ({
+    abbr,
+    value: row.games ? row.allowed / row.games : 0,
+  }));
+  return { ranks: rankMap(rows, true), rates: new Map(rows.map((row) => [row.abbr, row.value])) };
+}
+
+function offenseYards(rankings: Rankings | undefined) {
+  const rows = (rankings?.teams ?? [])
+    .map((team) => {
+      const games = team.totals.stat_games || team.wins + team.losses;
+      const passing = team.totals.passing;
+      const rushing = team.totals.rushing;
+      if (!games || passing == null || rushing == null) return null;
+      return { abbr: normalizeTeamAbbr(team.abbr), value: (passing + rushing) / games };
+    })
+    .filter((row): row is { abbr: string; value: number } => row != null);
+  return { ranks: rankMap(rows, false), rates: new Map(rows.map((row) => [row.abbr, row.value])) };
+}
+
+type RateTable = { ranks: Map<string, number>; rates: Map<string, number> };
+
+function metricTable(
+  rankings: Rankings | undefined,
+  valueOf: (team: Rankings["teams"][number]) => number | null,
+  lowerIsBetter: boolean,
+): RateTable {
+  const rows = (rankings?.teams ?? [])
+    .map((team) => {
+      const value = valueOf(team);
+      if (value == null || Number.isNaN(value)) return null;
+      return { abbr: normalizeTeamAbbr(team.abbr), value };
+    })
+    .filter((row): row is { abbr: string; value: number } => row != null);
+  return { ranks: rankMap(rows, lowerIsBetter), rates: new Map(rows.map((row) => [row.abbr, row.value])) };
+}
+
+function perGame(team: Rankings["teams"][number], key: string) {
+  const games = team.totals.stat_games || team.wins + team.losses;
+  const total = team.totals[key];
+  if (!games || total == null) return null;
+  return total / games;
+}
+
+function yardsPerPlay(team: Rankings["teams"][number]) {
+  const attempts = team.totals.attempts;
+  const carries = team.totals.carries;
+  const passing = team.totals.passing;
+  const rushing = team.totals.rushing;
+  if (attempts == null || carries == null || passing == null || rushing == null) return null;
+  const plays = attempts + carries;
+  if (!plays) return null;
+  return (passing + rushing) / plays;
+}
+
+function epaPerPlay(team: Rankings["teams"][number]) {
+  const attempts = team.totals.attempts;
+  const carries = team.totals.carries;
+  const passing = team.totals.passing_epa;
+  const rushing = team.totals.rushing_epa;
+  if (attempts == null || carries == null || passing == null || rushing == null) return null;
+  const plays = attempts + carries;
+  if (!plays) return null;
+  return (passing + rushing) / plays;
+}
+
+function rankedStat(label: string, table: RateTable, abbr: string, digits: number): RankStat {
+  const value = table.rates.get(abbr);
+  if (value == null) return { label, rank: null, value: MISSING };
+  return { label, rank: table.ranks.get(abbr) ?? null, value: value.toFixed(digits) };
+}
+
+const STATUS_ES: Record<string, string> = {
+  Questionable: "Cuestionable",
+  Doubtful: "Dudoso",
+  Out: "Fuera",
+  "Injured Reserve": "Reserva",
+  Suspension: "Suspendido",
+};
+
+const BODY_PARTS: [RegExp, string][] = [
+  [/hamstring/, "isquiotibiales"],
+  [/quadriceps|\bquads?\b/, "cuádriceps"],
+  [/concussion/, "conmoción"],
+  [/hip flexor/, "flexor de cadera"],
+  [/ankle/, "tobillo"],
+  [/shoulder/, "hombro"],
+  [/knee/, "rodilla"],
+  [/neck/, "cuello"],
+  [/thumb/, "pulgar"],
+  [/\btoes?\b/, "dedo del pie"],
+  [/groin/, "ingle"],
+  [/\bcalf\b/, "pantorrilla"],
+  [/achilles/, "aquiles"],
+  [/\bback\b/, "espalda"],
+  [/\bribs?\b/, "costilla"],
+  [/wrist/, "muñeca"],
+  [/\bhand\b/, "mano"],
+  [/\bfoot\b/, "pie"],
+  [/elbow/, "codo"],
+  [/oblique/, "oblicuo"],
+  [/pectoral|\bpec\b/, "pectoral"],
+  [/biceps/, "bíceps"],
+  [/triceps/, "tríceps"],
+  [/finger/, "dedo"],
+  [/\bhip\b(?! flexor)/, "cadera"],
+  [/illness|sick/, "enfermedad"],
+];
+
+const NUMBER_WORDS: Record<string, string> = {
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+};
+
+function sentenceCase(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function bodyParts(text: string) {
+  const paren = text.match(/\(([^)]+)\)/);
+  const source = (paren?.[1] ?? text).toLowerCase();
+  const found = BODY_PARTS.filter(([pattern]) => pattern.test(source)).map(([, label]) => label);
+  return [...new Set(found)];
+}
+
+function injuryOutcome(text: string) {
+  const note = text.toLowerCase();
+  const suspended = note.match(/suspended (\w+|\d+) games?/);
+  if (suspended) {
+    const count = NUMBER_WORDS[suspended[1]] ?? suspended[1];
+    return `suspensión de ${count} partidos`;
+  }
+  if (/full participant/.test(note)) return "práctica completa";
+  if (/limited participant/.test(note)) return "práctica limitada";
+  if (/non-?participant/.test(note)) return "no practicó";
+  if (/unlikely|probably won't|will not play|won't play|ruled out|not expected to play/.test(note)) return "difícil que juegue";
+  if (/hopeful to return|could return|expected to return/.test(note)) return "podría volver pronto";
+  if (/isn't expected to face a long-term|not expected to face a long-term/.test(note)) return "sin baja larga";
+  if (/long-term/.test(note)) return "baja larga";
+  if (/injured reserve/.test(note)) return "reserva de lesionados";
+  return null;
+}
+
+function injuryImpact(detail: string | null | undefined) {
+  const text = detail?.trim() ?? "";
+  if (!text) return MISSING;
+  const parts = bodyParts(text);
+  const outcome = injuryOutcome(text);
+  if (parts.length && outcome) return sentenceCase(`${parts.join(" y ")} · ${outcome}`);
+  if (outcome) return sentenceCase(outcome);
+  if (parts.length) return sentenceCase(parts.join(" y "));
+  return MISSING;
+}
+
+function sideInjuries(game: GameCard, abbr: string): Injury[] {
+  const rows = normalizeTeamAbbr(game.away.abbr) === abbr ? game.away_injuries : game.home_injuries;
+  return (rows ?? []).map((row) => ({
+    name: row.name,
+    pos: row.pos || "—",
+    status: STATUS_ES[row.status] ?? row.status,
+    impact: injuryImpact(row.detail),
+  }));
+}
+
+function weatherLabel(game: GameCard) {
+  const temp = game.weather_c != null ? Math.round(game.weather_c) : game.temp != null ? Math.round(((game.temp - 32) * 5) / 9) : null;
+  const precip = game.weather_precip;
+  const wind = game.weather_wind != null ? game.weather_wind : game.wind != null ? Math.round(game.wind * 1.609) : null;
+  if (temp == null && precip == null && wind == null) return MISSING;
+  const parts: string[] = [];
+  if (temp != null) parts.push(`${temp}°C`);
+  if (precip != null) parts.push(`lluvia ${precip}%`);
+  if (wind != null) parts.push(`viento ${wind} km/h`);
+  return parts.join(", ");
+}
+
+function moneyLabel(odds: number | null | undefined) {
+  if (odds == null) return MISSING;
+  const rounded = Math.round(odds);
+  return rounded > 0 ? `+${rounded}` : String(rounded);
+}
+
+function impliedPct(odds: number) {
+  const probability = odds < 0 ? -odds / (-odds + 100) : 100 / (odds + 100);
+  return Math.round(probability * 100);
+}
+
+function marketEdge(model: number, odds: number | null | undefined) {
+  if (odds == null) return { text: MISSING, tone: "muted" as const };
+  const gap = model - impliedPct(odds);
+  if (gap >= 5) return { text: "Valor", tone: "green" as const };
+  if (gap >= 2) return { text: "Ligero valor", tone: "green" as const };
+  return { text: "Neutral", tone: "muted" as const };
+}
+
+function splitQuarters(total: number): [number, number, number, number] {
+  const weights = [0.22, 0.27, 0.24, 0.27];
+  const raw = weights.map((weight) => Math.floor(total * weight));
+  let remainder = total - raw.reduce((sum, value) => sum + value, 0);
+  const order = [1, 3, 2, 0];
+  let cursor = 0;
+  while (remainder > 0) {
+    raw[order[cursor % order.length]] += 1;
+    remainder -= 1;
+    cursor += 1;
+  }
+  return [raw[0], raw[1], raw[2], raw[3]];
+}
+
+function lineText(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatTimeEt(game: GameCard) {
+  const raw = kickoffLabel(game);
+  const match = raw.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
+  if (!match) return "Horario por definir";
+  return `${match[1]}:${match[2]} ${match[3].toUpperCase()} (ET)`;
+}
+
+function stadiumLine(game: GameCard, homeCity: string) {
+  const stadium = game.stadium?.trim();
+  const city = pretty(homeCity);
+  if (!stadium) return city;
+  if (/wembley/i.test(stadium)) return "Wembley Stadium, Londres";
+  if (/tottenham/i.test(stadium)) return `${stadium}, Londres`;
+  if (stadium.toLowerCase().includes(city.toLowerCase())) return stadium;
+  return `${stadium}, ${city}`;
+}
+
+function restLabel(games: SlateGame[], cutoff: SlateGame, awayAbbr: string, homeAbbr: string) {
+  const days = (abbr: string) => {
+    const last = priorGames(games, abbr, cutoff).at(-1);
+    if (!last?.item.game.gameday || !cutoff.game.gameday) return null;
+    const previous = parseCalendarDate(last.item.game.gameday);
+    const next = parseCalendarDate(cutoff.game.gameday);
+    if (!previous || !next) return null;
+    return Math.round((next.getTime() - previous.getTime()) / 86_400_000);
+  };
+  const awayDays = days(awayAbbr);
+  const homeDays = days(homeAbbr);
+  const awayName = pretty(nick(awayAbbr));
+  const homeName = pretty(nick(homeAbbr));
+  if (awayDays == null && homeDays == null) return MISSING;
+  if (awayDays != null && awayDays === homeDays) return `Ambos con ${awayDays} días`;
+  const awayText = awayDays == null ? `${awayName} debut` : `${awayName} ${awayDays} días`;
+  const homeText = homeDays == null ? `${homeName} debut` : `${homeName} ${homeDays} días`;
+  return `${awayText} | ${homeText}`;
+}
+
+function buildSide(
+  games: SlateGame[],
+  cutoff: SlateGame,
+  side: GameCard["away"],
+  rankings: Rankings | undefined,
+  allowed: RateTable,
+  yards: RateTable,
+  rates: {
+    ypp: RateTable;
+    passYds: RateTable;
+    epa: RateTable;
+    sacks: RateTable;
+    interceptions: RateTable;
+    hits: RateTable;
+  },
+): TeamSide {
+  const abbr = normalizeTeamAbbr(side.abbr);
+  const history = priorGames(games, abbr, cutoff);
+  const lastFive = history.slice(-5);
+  const lastThree = history.slice(-3);
+  const rankRow = rankings?.teams.find((team) => normalizeTeamAbbr(team.abbr) === abbr);
+  const home: Rec = { w: 0, l: 0, t: 0 };
+  const road: Rec = { w: 0, l: 0, t: 0 };
+  for (const entry of history) {
+    const bucket = entry.row.away ? road : home;
+    if (entry.row.result === "W") bucket.w += 1;
+    else if (entry.row.result === "L") bucket.l += 1;
+    else bucket.t += 1;
+  }
+  const schedule: ScheduleRow[] = lastFive.map(({ item, row }) => ({
+    week: item.week,
+    opp: pretty(nick(row.opp)),
+    oppAbbr: normalizeTeamAbbr(row.opp),
+    away: row.away,
+    result: row.result,
+    score: `${row.scored}-${row.allowed}`,
+    oppRecord: formatRec(recordOf(games, row.opp, item), true),
+  }));
+  const rivalRecs = lastFive.map(({ item, row }) => recordOf(games, row.opp, item));
+  const beatenRecs = lastFive.filter((entry) => entry.row.result === "W").map(({ item, row }) => recordOf(games, row.opp, item));
+  const scoredAvg = lastThree.length
+    ? lastThree.reduce((sum, entry) => sum + entry.row.scored, 0) / lastThree.length
+    : 0;
+  const allowedAvg = lastThree.length
+    ? lastThree.reduce((sum, entry) => sum + entry.row.allowed, 0) / lastThree.length
+    : 0;
+  const trend: Rec = { w: 0, l: 0, t: 0 };
+  for (const entry of lastThree) {
+    if (entry.row.result === "W") trend.w += 1;
+    else if (entry.row.result === "L") trend.l += 1;
+    else trend.t += 1;
+  }
+  const pointsRank = side.ppg != null ? (rankRow?.ranks.points ?? null) : null;
+  const yardsRank = yards.ranks.get(abbr) ?? null;
+  const yardsValue = yards.rates.get(abbr);
+  const allowedRank = allowed.rates.has(abbr) ? (allowed.ranks.get(abbr) ?? null) : null;
+  const allowedValue = allowed.rates.get(abbr);
+  return {
+    abbr,
+    city: teamCity(abbr),
+    name: nick(abbr),
+    record: formatRecord(side),
+    split: `(${formatRec(home)} local | ${formatRec(road)} visita)`,
+    schedule,
+    rivalsRecord: history.length ? recPct(sumRecs(rivalRecs)) : MISSING,
+    beatenRecord: history.length ? recPct(sumRecs(beatenRecs)) : MISSING,
+    offense: [
+      { label: "Puntos", rank: pointsRank, value: side.ppg != null ? side.ppg.toFixed(1) : MISSING },
+      { label: "Yardas totales", rank: yardsValue == null ? null : yardsRank, value: yardsValue == null ? MISSING : yardsValue.toFixed(1) },
+      rankedStat("Yardas por jugada", rates.ypp, abbr, 1),
+      rankedStat("Yardas de pase", rates.passYds, abbr, 1),
+      rankedStat("EPA/jugada", rates.epa, abbr, 2),
+    ],
+    defense: [
+      { label: "Puntos", rank: allowedRank, value: allowedValue == null ? MISSING : allowedValue.toFixed(1) },
+      { label: "Yardas totales", rank: null, value: MISSING },
+      { label: "Presión al QB", rank: null, value: MISSING },
+      rankedStat("Capturas", rates.sacks, abbr, 1),
+      rankedStat("Intercepciones", rates.interceptions, abbr, 1),
+      rankedStat("Golpes al QB", rates.hits, abbr, 1),
+    ],
+    injuries: sideInjuries(cutoff.game, abbr),
+    trendRecord: lastThree.length ? formatRec(trend, true) : MISSING,
+    trendScored: lastThree.length ? scoredAvg.toFixed(1) : MISSING,
+    trendAllowed: lastThree.length ? allowedAvg.toFixed(1) : MISSING,
+    form: lastThree.map((entry) => entry.row.result),
+    quarters: [0, 0, 0, 0],
+  };
+}
+
+function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | undefined): MatchupData {
+  const { game, week } = item;
+  const allowed = pointsAllowedTable(games, item);
+  const yards = offenseYards(rankings);
+  const rates = {
+    ypp: metricTable(rankings, yardsPerPlay, false),
+    passYds: metricTable(rankings, (team) => perGame(team, "passing"), false),
+    epa: metricTable(rankings, epaPerPlay, false),
+    sacks: metricTable(rankings, (team) => perGame(team, "sacks"), false),
+    interceptions: metricTable(rankings, (team) => perGame(team, "interceptions"), false),
+    hits: metricTable(rankings, (team) => perGame(team, "qb_hits"), false),
+    giveaways: metricTable(rankings, (team) => perGame(team, "giveaways"), true),
+  };
+  const away = buildSide(games, item, game.away, rankings, allowed, yards, rates);
+  const home = buildSide(games, item, game.home, rankings, allowed, yards, rates);
+  const awayPpg = game.away.ppg ?? 21;
+  const homePpg = game.home.ppg ?? 21;
+  const projected = game.projected_total != null ? Math.round(game.projected_total) : Math.round(awayPpg + homePpg);
+  const share = awayPpg + homePpg;
+  const scoreAway = share > 0 ? Math.round(projected * (awayPpg / share)) : Math.round(projected / 2);
+  const scoreHome = projected - scoreAway;
+  away.quarters = splitQuarters(scoreAway);
+  home.quarters = splitQuarters(scoreHome);
+  const total = scoreAway + scoreHome;
+  const bookLine = game.book_total ?? game.api_total;
+  const hasLine = bookLine != null;
+  const line = bookLine ?? total;
+  const overProb = hasLine ? clamp(Math.round(50 + (total - line) * 3), 35, 68) : 50;
+  const underProb = 100 - overProb;
+  const playedAway = game.away.wins + game.away.losses + game.away.ties;
+  const playedHome = game.home.wins + game.home.losses + game.home.ties;
+  const awayPct = playedAway ? (game.away.wins + game.away.ties * 0.5) / playedAway : 0.5;
+  const homePct = playedHome ? (game.home.wins + game.home.ties * 0.5) / playedHome : 0.5;
+  const cats = game.rank_away + game.rank_home;
+  const catEdge = cats ? (game.rank_home - game.rank_away) / cats : 0;
+  const winHome = clamp(Math.round((0.5 + (homePct - awayPct) * 0.28 + catEdge * 0.22 + 0.03) * 100), 34, 70);
+  const winAway = 100 - winHome;
+  const margin = scoreHome - scoreAway;
+  const favorite = margin === 0 ? null : margin > 0 ? home : away;
+  const marginText = favorite
+    ? `Diferencia esperada: ${pretty(favorite.name)} por ${Math.abs(margin)} puntos`
+    : "Empate proyectado";
+  const awayCode = normalizeTeamAbbr(game.away.abbr);
+  const homeCode = normalizeTeamAbbr(game.home.abbr);
+  const pair = (table: RateTable) => ({
+    away: table.rates.get(awayCode) ?? null,
+    home: table.rates.get(homeCode) ?? null,
+  });
+  const compare: CompareRow[] = [
+    { label: "Puntos anotados por partido", away: game.away.ppg, home: game.home.ppg, digits: 1 },
+    {
+      label: "Puntos permitidos por partido",
+      away: allowed.rates.get(away.abbr) ?? null,
+      home: allowed.rates.get(home.abbr) ?? null,
+      digits: 1,
+    },
+    {
+      label: "Yardas totales por partido",
+      away: yards.rates.get(away.abbr) ?? null,
+      home: yards.rates.get(home.abbr) ?? null,
+      digits: 1,
+    },
+    { label: "Yardas por jugada", ...pair(rates.ypp), digits: 1 },
+    { label: "Tercera oportunidad", away: null, home: null, digits: 0, suffix: "%" },
+    { label: "Zona roja (TD)", away: null, home: null, digits: 0, suffix: "%" },
+    { label: "Presiones al QB", away: null, home: null, digits: 0 },
+    { label: "Entregas de balón", ...pair(rates.giveaways), digits: 1 },
+    { label: "Yardas de pase por partido", ...pair(rates.passYds), digits: 1 },
+    { label: "Capturas por partido", ...pair(rates.sacks), digits: 1 },
+    { label: "Intercepciones por partido", ...pair(rates.interceptions), digits: 1 },
+    { label: "Golpes al QB por partido", ...pair(rates.hits), digits: 1 },
+    { label: "EPA por jugada", ...pair(rates.epa), digits: 2 },
+  ];
+  const gaps = [...game.categories]
+    .filter((category) => category.away_rank != null && category.home_rank != null)
+    .map((category) => ({
+      label: category.label,
+      gap: Math.abs((category.away_rank ?? 0) - (category.home_rank ?? 0)),
+      awayRank: category.away_rank ?? 0,
+      homeRank: category.home_rank ?? 0,
+    }))
+    .sort((a, b) => b.gap - a.gap)
+    .slice(0, 3);
+  const bullets = gaps.length
+    ? gaps.map((category) => {
+        const awayBetter = category.awayRank <= category.homeRank;
+        const leader = awayBetter ? pretty(away.name) : pretty(home.name);
+        const lead = awayBetter ? category.awayRank : category.homeRank;
+        const trail = awayBetter ? category.homeRank : category.awayRank;
+        return `${category.label}: ${leader} ${lead}° vs ${trail}°`;
+      })
+    : [MISSING];
+  const combined = (game.away.ppg ?? 0) + (game.home.ppg ?? 0);
+  const pace = combined >= 48 ? "Alto" : combined >= 42 ? "Medio-alto" : combined >= 36 ? "Medio" : "Bajo";
   const spread = game.spread ?? game.api_spread;
-  if (spread != null && awayIsAtl) {
-    data.markets[2].line = formatSpread(-spread);
-    data.markets[3].line = formatSpread(spread);
-  }
+  const awayCover = spread == null ? 50 : clamp(Math.round(50 + (scoreAway - scoreHome - spread) * 3), 35, 65);
+  const homeCover = 100 - awayCover;
+  const overValue = total - line >= 1.5 ? "Valor" : total - line >= 0.5 ? "Ligero valor" : "Neutral";
+  const underValue = line - total >= 1.5 ? "Valor" : line - total >= 0.5 ? "Ligero valor" : "Neutral";
+  const edge = Math.abs(winHome - winAway);
+  const confidenceScore = edge >= 24 ? 8 : edge >= 16 ? 7 : edge >= 8 ? 6 : 5;
+  const confidenceWord = confidenceScore >= 8 ? "alta" : confidenceScore >= 6 ? "moderada" : "baja";
+  const leader = winHome >= winAway ? home : away;
+  const trailer = leader === home ? away : home;
+  const leaderPct = leader === home ? winHome : winAway;
+  return {
+    gameId: game.game_id,
+    weekLabel: String(week),
+    dateLine: game.gameday ? formatKickoff(game.gameday) : "Fecha por definir",
+    timeLine: formatTimeEt(game),
+    stadium: stadiumLine(game, home.city),
+    confidence: `${confidenceScore} / 10 (${confidenceWord})`,
+    away,
+    home,
+    winAway,
+    winHome,
+    scoreAway,
+    scoreHome,
+    marginText,
+    total,
+    line,
+    hasLine,
+    overProb,
+    underProb,
+    compare,
+    factors: [
+      { icon: "pin", label: "Localía", value: `${pretty(home.name)} (${stadiumLine(game, home.city)})` },
+      { icon: "weather", label: "Clima", value: weatherLabel(game) },
+      { icon: "rest", label: "Descanso", value: restLabel(games, item, away.abbr, home.abbr) },
+      { icon: "pace", label: "Ritmo de juego", value: `${pace} (${combined.toFixed(1)} pts combinados)` },
+      { icon: "key", label: "Enfrentamientos clave", bullets },
+    ],
+    markets: [
+      {
+        market: `Ganador - ${pretty(away.name)}`,
+        line: moneyLabel(game.away_moneyline),
+        prob: `${winAway}%`,
+        value: marketEdge(winAway, game.away_moneyline).text,
+        valueTone: marketEdge(winAway, game.away_moneyline).tone,
+      },
+      {
+        market: `Ganador - ${pretty(home.name)}`,
+        line: moneyLabel(game.home_moneyline),
+        prob: `${winHome}%`,
+        value: marketEdge(winHome, game.home_moneyline).text,
+        valueTone: marketEdge(winHome, game.home_moneyline).tone,
+      },
+      {
+        market: `Hándicap - ${pretty(away.name)}`,
+        line: spread == null ? MISSING : formatSpread(-spread),
+        prob: spread == null ? MISSING : `${awayCover}%`,
+        value: spread == null ? MISSING : awayCover >= 53 ? "Ligero valor" : "Neutral",
+        valueTone: spread != null && awayCover >= 53 ? "green" : "muted",
+      },
+      {
+        market: `Hándicap - ${pretty(home.name)}`,
+        line: spread == null ? MISSING : formatSpread(spread),
+        prob: spread == null ? MISSING : `${homeCover}%`,
+        value: spread == null ? MISSING : homeCover >= 53 ? "Ligero valor" : "Neutral",
+        valueTone: spread != null && homeCover >= 53 ? "green" : "muted",
+      },
+      {
+        market: hasLine ? `Total - Más de ${lineText(line)}` : "Total - Más",
+        line: hasLine ? lineText(line) : MISSING,
+        prob: hasLine ? `${overProb}%` : MISSING,
+        value: hasLine ? overValue : MISSING,
+        valueTone: !hasLine || overValue === "Neutral" ? "muted" : "green",
+      },
+      {
+        market: hasLine ? `Total - Menos de ${lineText(line)}` : "Total - Menos",
+        line: hasLine ? lineText(line) : MISSING,
+        prob: hasLine ? `${underProb}%` : MISSING,
+        value: hasLine ? underValue : MISSING,
+        valueTone: !hasLine || underValue === "Neutral" ? "muted" : "green",
+      },
+    ],
+    conclusion: `Ventaja para ${pretty(leader.name)} (${leaderPct}%). ${pretty(trailer.name)} llega con récord ${trailer.record}. La proyección es ${scoreAway}-${scoreHome} de visitante a local, con un total de ${total} puntos.`,
+    notes: [],
+  };
 }
 
-export async function loadMatchup(): Promise<MatchupData> {
-  const data = cloneMatchup();
+export async function loadMatchupSlate(): Promise<MatchupSlate | null> {
   try {
-    const dash = await api.dashboard(currentNflSeason());
-    const game = dash.board.games.find((item) => {
-      const sides = [item.away.abbr, item.home.abbr].map((abbr) => abbr.toUpperCase()).sort().join("-");
-      return sides === "ATL-CHI";
-    });
-    if (!game) return data;
-    applyApi(data, game, dash.rankings, dash.board.week);
-    return data;
+    const season = currentNflSeason();
+    const status = await api.status(season);
+    if (!status.weeks.length) return null;
+    const bundles = await Promise.all(status.weeks.map((week) => api.week(season, week)));
+    const games: SlateGame[] = [];
+    const rankingsByWeek: Record<number, Rankings> = {};
+    for (const bundle of bundles) {
+      rankingsByWeek[bundle.board.week] = bundle.rankings;
+      for (const game of bundle.board.games) games.push({ week: bundle.board.week, game });
+    }
+    games.sort((a, b) => (isBefore(a, b) ? -1 : isBefore(b, a) ? 1 : 0));
+    const today = todayInMonterrey()?.toISOString().slice(0, 10) ?? "";
+    const upcoming = games.findIndex((item) => (item.game.gameday ?? "") >= today);
+    const index = upcoming >= 0 ? upcoming : Math.max(0, games.length - 1);
+    return { games, rankingsByWeek, index };
   } catch {
-    return data;
+    return null;
   }
 }
 
-export function formatCompare(value: number, row: CompareRow) {
+export function matchupAt(slate: MatchupSlate, index: number) {
+  const item = slate.games[index];
+  if (!item) return cloneMatchup();
+  return buildMatchup(item, slate.games, slate.rankingsByWeek[item.week]);
+}
+
+export function formatCompare(value: number | null, row: CompareRow) {
+  if (value == null) return "No encontrado";
   const text = row.digits === 0 ? String(Math.round(value)) : value.toFixed(row.digits);
   return `${text}${row.suffix ?? ""}`;
 }

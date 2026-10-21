@@ -46,9 +46,17 @@ class SideOut(BaseModel):
     trend: str | None
 
 
+class InjuryOut(BaseModel):
+    name: str
+    pos: str
+    status: str
+    detail: str | None = None
+
+
 class GameOut(BaseModel):
     game_id: str
     gameday: date | None
+    stadium: str | None = None
     away: SideOut
     home: SideOut
     projected_total: float | None
@@ -65,6 +73,16 @@ class GameOut(BaseModel):
     odds_total: float | None
     api_spread: float | None
     api_total: float | None
+    roof: str | None = None
+    temp: int | None = None
+    wind: int | None = None
+    weather_c: float | None = None
+    weather_precip: int | None = None
+    weather_wind: int | None = None
+    away_moneyline: int | None = None
+    home_moneyline: int | None = None
+    away_injuries: list[InjuryOut] = []
+    home_injuries: list[InjuryOut] = []
     pick_ari: str | None
     pick_cabo: str | None
     pick_spread: str | None

@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.enrich import injury_map
 from app.engine import (
     RANK_CATEGORIES,
     SPECIAL_CATEGORIES,
@@ -26,13 +27,15 @@ from app.schemas import (
     CategoryOut,
     DashboardOut,
     GameOut,
+    InjuryOut,
     RankRow,
     RankingsOut,
     SideOut,
     StatusOut,
     WeekBundleOut,
 )
-from app.teams import TEAMS
+from app.teams import TEAMS, canon_abbr
+from app.weather import refresh_games
 
 
 def default_season(today: date | None = None) -> int:
@@ -113,6 +116,13 @@ def _snapshots(db: Session, season: int, before_week: int):
             "points": float(points[abbr]) if counted else None,
             "sacks": _f(stat.sacks) if stat else None,
             "interceptions": _f(stat.interceptions) if stat else None,
+            "qb_hits": _f(stat.qb_hits) if stat else None,
+            "giveaways": _f(stat.giveaways) if stat else None,
+            "attempts": _f(stat.pass_attempts) if stat else None,
+            "carries": _f(stat.rush_attempts) if stat else None,
+            "passing_epa": _f(stat.passing_epa) if stat else None,
+            "rushing_epa": _f(stat.rushing_epa) if stat else None,
+            "stat_games": float(stat.games) if stat and stat.games else None,
             "forced_fumbles": _f(stat.forced_fumbles) if stat else None,
             "tackles": _f(stat.tackles) if stat else None,
             "fg_made": _f(stat.fg_made) if stat else None,
@@ -170,10 +180,12 @@ def _build_board_from_snapshot(
         .where(Game.season == season, Game.week == week, Game.game_type == "REG")
         .order_by(Game.gameday, Game.game_id)
     ).all()
+    refresh_games(db, list(slate_games))
     entries = {
         row.game_id: row
         for row in db.scalars(select(SlateEntry).where(SlateEntry.season == season, SlateEntry.week == week)).all()
     }
+    injuries = injury_map(db, season)
     cards: list[GameOut] = []
     for game in slate_games:
         entry = entries.get(game.game_id)
@@ -197,6 +209,7 @@ def _build_board_from_snapshot(
             GameOut(
                 game_id=game.game_id,
                 gameday=game.gameday,
+                stadium=game.stadium,
                 away=away,
                 home=home,
                 projected_total=projected,
@@ -216,6 +229,16 @@ def _build_board_from_snapshot(
                 odds_total=_f(entry.odds_total) if entry else None,
                 api_spread=_f(game.api_spread),
                 api_total=_f(game.api_total),
+                roof=game.roof,
+                temp=game.temp,
+                wind=game.wind,
+                weather_c=_f(game.weather_c),
+                weather_precip=game.weather_precip,
+                weather_wind=game.weather_wind,
+                away_moneyline=game.away_moneyline,
+                home_moneyline=game.home_moneyline,
+                away_injuries=[InjuryOut(**item) for item in injuries.get(canon_abbr(game.away_team), [])],
+                home_injuries=[InjuryOut(**item) for item in injuries.get(canon_abbr(game.home_team), [])],
                 pick_ari=entry.pick_ari if entry else None,
                 pick_cabo=entry.pick_cabo if entry else None,
                 pick_spread=entry.pick_spread if entry else None,

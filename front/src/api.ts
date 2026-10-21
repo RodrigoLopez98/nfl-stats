@@ -19,9 +19,17 @@ export type Category = {
   winner: string | null;
 };
 
+export type ReportInjury = {
+  name: string;
+  pos: string;
+  status: string;
+  detail: string | null;
+};
+
 export type GameCard = {
   game_id: string;
   gameday: string | null;
+  stadium?: string | null;
   away: Side;
   home: Side;
   projected_total: number | null;
@@ -38,6 +46,16 @@ export type GameCard = {
   odds_total: number | null;
   api_spread: number | null;
   api_total: number | null;
+  roof?: string | null;
+  temp?: number | null;
+  wind?: number | null;
+  weather_c?: number | null;
+  weather_precip?: number | null;
+  weather_wind?: number | null;
+  away_moneyline?: number | null;
+  home_moneyline?: number | null;
+  away_injuries?: ReportInjury[] | null;
+  home_injuries?: ReportInjury[] | null;
   pick_ari: string | null;
   pick_cabo: string | null;
   pick_spread: string | null;

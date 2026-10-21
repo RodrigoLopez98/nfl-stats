@@ -21,6 +21,15 @@ class Game(Base):
     stadium: Mapped[str | None] = mapped_column(String(120), nullable=True)
     api_spread: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
     api_total: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    roof: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    temp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wind: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_moneyline: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    home_moneyline: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weather_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    weather_precip: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weather_wind: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weather_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class TeamStat(Base):
@@ -45,6 +54,12 @@ class TeamStat(Base):
     punt_return_yards: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
     kickoff_return_yards: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
     special_teams_tds: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
+    pass_attempts: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
+    rush_attempts: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
+    passing_epa: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    rushing_epa: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    qb_hits: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
+    giveaways: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -79,6 +94,19 @@ class BankrollLine(Base):
     odds: Mapped[float] = mapped_column(Numeric(12, 4))
     stake: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     note: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+
+class InjuryReport(Base):
+    __tablename__ = "injury_reports"
+    __table_args__ = (UniqueConstraint("season", "team", "player", name="uq_injury_player"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, index=True)
+    team: Mapped[str] = mapped_column(String(8), index=True)
+    player: Mapped[str] = mapped_column(String(80))
+    position: Mapped[str] = mapped_column(String(8), default="")
+    status: Mapped[str] = mapped_column(String(32))
+    detail: Mapped[str | None] = mapped_column(String(180), nullable=True)
 
 
 class SyncLog(Base):

@@ -5,8 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Game, SyncLog, TeamStat
+from app.enrich import enrich_injuries, enrich_schedule
 from app.espn_scores import enrich_scores_from_espn
+from app.models import Game, SyncLog, TeamStat
 
 
 def _num(value) -> float | None:
@@ -19,6 +20,20 @@ def _int(value) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _whole(value) -> int | None:
+    number = _num(value)
+    if number is None:
+        return None
+    return int(number)
+
+
+def _sum_present(values: list[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return float(sum(present))
 
 
 def _date(value) -> date | None:
@@ -61,10 +76,12 @@ def sync_season(db: Session, season: int) -> dict:
         games_upserted = _upsert_games(db, games)
         scores_enriched = enrich_scores_from_espn(db, season)
         teams_upserted = _upsert_stats(db, season, stats)
+        schedule_note = enrich_schedule(db, season)
+        injury_note = enrich_injuries(db, season)
         log.games_upserted = games_upserted
         log.teams_upserted = teams_upserted
         log.ok = True
-        log.message = f"ok espn_scores={scores_enriched}"
+        log.message = f"ok espn_scores={scores_enriched} {schedule_note} {injury_note}"
         log.finished_at = datetime.utcnow()
         db.commit()
         return {
@@ -73,6 +90,8 @@ def sync_season(db: Session, season: int) -> dict:
             "games": games_upserted,
             "teams": teams_upserted,
             "espn_scores": scores_enriched,
+            "schedule": schedule_note,
+            "injuries": injury_note,
         }
     except Exception as exc:
         db.rollback()
@@ -113,8 +132,14 @@ def _upsert_games(db: Session, rows: list[dict]) -> int:
         if home_score is not None:
             game.home_score = home_score
         game.stadium = row.get("stadium")
-        game.api_spread = _num(row.get("spread_line"))
+        spread = _num(row.get("spread_line"))
+        # Same sign as nflverse: this value is the away line. Store the home line.
+        game.api_spread = None if spread is None else -spread
         game.api_total = _num(row.get("total_line"))
+        roof = (row.get("roof") or "").strip()
+        game.roof = roof[:24] if roof else None
+        game.temp = _whole(row.get("temp"))
+        game.wind = _whole(row.get("wind"))
         count += 1
     return count
 
@@ -150,6 +175,19 @@ def _upsert_stats(db: Session, season: int, rows: list[dict]) -> int:
         stat.punt_return_yards = _num(row.get("punt_return_yards"))
         stat.kickoff_return_yards = _num(row.get("kickoff_return_yards"))
         stat.special_teams_tds = _num(row.get("special_teams_tds"))
+        stat.pass_attempts = _num(row.get("attempts"))
+        stat.rush_attempts = _num(row.get("carries"))
+        stat.passing_epa = _num(row.get("passing_epa"))
+        stat.rushing_epa = _num(row.get("rushing_epa"))
+        stat.qb_hits = _num(row.get("def_qb_hits"))
+        stat.giveaways = _sum_present(
+            [
+                _num(row.get("passing_interceptions")),
+                _num(row.get("rushing_fumbles_lost")),
+                _num(row.get("receiving_fumbles_lost")),
+                _num(row.get("sack_fumbles_lost")),
+            ]
+        )
         stat.synced_at = datetime.utcnow()
         count += 1
     return count

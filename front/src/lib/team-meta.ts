@@ -2,6 +2,7 @@
 export function normalizeTeamAbbr(abbr: string) {
   const upper = abbr.toUpperCase();
   if (upper === "LA") return "LAR";
+  if (upper === "WSH") return "WAS";
   return upper;
 }
 

@@ -34,3 +34,12 @@ TEAMS: dict[str, str] = {
 }
 
 NAME_TO_ABBR = {name: abbr for abbr, name in TEAMS.items()}
+
+
+def canon_abbr(abbr: str | None) -> str:
+    code = (abbr or "").upper()
+    if code == "LA":
+        return "LAR"
+    if code == "WSH":
+        return "WAS"
+    return code

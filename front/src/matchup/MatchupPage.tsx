@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, CloudSun, Gauge, MapPin, Power, Star, Sun } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, CloudSun, Gauge, MapPin, Power, Star, Sun } from "lucide-react";
 import { TeamLogo } from "@/components/team-logo";
+import { teamNickname } from "@/lib/team-meta";
 import {
   formatCompare,
   IMAGE_MATCHUP,
-  loadMatchup,
+  loadMatchupSlate,
+  matchupAt,
   type CompareRow,
   type Factor,
   type Injury,
   type MatchupData,
+  type MatchupSlate,
   type ScheduleRow,
+  type SlateGame,
   type TeamSide,
 } from "./data";
 import "./matchup.css";
@@ -24,16 +28,45 @@ const FACTOR_ICONS = {
 
 export function MatchupPage() {
   const [data, setData] = useState<MatchupData>(IMAGE_MATCHUP);
+  const [slate, setSlate] = useState<MatchupSlate | null>(null);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
     let cancel = false;
-    loadMatchup().then((next) => {
-      if (!cancel) setData(next);
+    loadMatchupSlate().then((next) => {
+      if (cancel || !next) return;
+      setSlate(next);
+      setIndex(next.index);
     });
     return () => {
       cancel = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!slate?.games.length) return;
+    setData(matchupAt(slate, index));
+  }, [slate, index]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      event.preventDefault();
+      setIndex((current) => {
+        const next = event.key === "ArrowLeft" ? current - 1 : current + 1;
+        if (!slate || next < 0 || next >= slate.games.length) return current;
+        return next;
+      });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [slate]);
+
+  const totalGames = slate?.games.length ?? 0;
+  const prevGame = slate?.games[index - 1];
+  const nextGame = slate?.games[index + 1];
 
   const awayPts = data.away.quarters.reduce((sum, n) => sum + n, 0);
   const homePts = data.home.quarters.reduce((sum, n) => sum + n, 0);
@@ -44,10 +77,32 @@ export function MatchupPage() {
         <TeamBanner side={data.away} align="away" />
         <div className="hero-center">
           <img className="nfl-mark" src="/nfl-logo.png" alt="NFL" />
-          <div className="week">SEMANA {data.weekLabel}</div>
-          <div className="date">{data.dateLine}</div>
-          <div className="time">{data.timeLine}</div>
-          <div className="stadium">{data.stadium}</div>
+          <div className="hero-switch">
+            <button
+              type="button"
+              className="hero-nav"
+              aria-label={prevGame ? `Juego anterior, ${slateLabel(prevGame)}` : "Juego anterior"}
+              disabled={!prevGame}
+              onClick={() => setIndex((current) => Math.max(0, current - 1))}
+            >
+              <ChevronLeft strokeWidth={2.6} />
+            </button>
+            <div className="hero-switch-copy">
+              <div className="week">SEMANA {data.weekLabel}</div>
+              <div className="date">{data.dateLine}</div>
+              <div className="time">{data.timeLine}</div>
+              <div className="stadium">{data.stadium}</div>
+            </div>
+            <button
+              type="button"
+              className="hero-nav"
+              aria-label={nextGame ? `Juego siguiente, ${slateLabel(nextGame)}` : "Juego siguiente"}
+              disabled={!nextGame}
+              onClick={() => setIndex((current) => Math.min(totalGames - 1, current + 1))}
+            >
+              <ChevronRight strokeWidth={2.6} />
+            </button>
+          </div>
         </div>
         <TeamBanner side={data.home} align="home" />
       </header>
@@ -94,17 +149,17 @@ export function MatchupPage() {
               <div className="total-body">
                 <div className="total-main">
                   <div className="total-num">{data.total}</div>
-                  <div className="total-line">Línea actual: {data.line}</div>
+                  <div className="total-line">{data.hasLine ? `Línea actual: ${data.line}` : "No encontrado"}</div>
                 </div>
                 <span className="total-rule" aria-hidden="true" />
                 <div className="ou-wrap">
                   <div className="ou over">
-                    <div className="lbl">Más de {data.line}</div>
-                    <div className="pct">{data.overProb}%</div>
+                    <div className="lbl">{data.hasLine ? `Más de ${data.line}` : "Más"}</div>
+                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.overProb}%` : "No encontrado"}</div>
                   </div>
                   <div className="ou under">
-                    <div className="lbl">Menos de {data.line}</div>
-                    <div className="pct">{data.underProb}%</div>
+                    <div className="lbl">{data.hasLine ? `Menos de ${data.line}` : "Menos"}</div>
+                    <div className={`pct${data.hasLine ? "" : " missing"}`}>{data.hasLine ? `${data.underProb}%` : "No encontrado"}</div>
                   </div>
                 </div>
               </div>
@@ -137,7 +192,7 @@ export function MatchupPage() {
           <InjuryCard side={data.home} tone="navy" />
           <article className="card factor-card">
             <h2 className="card-h">Factores adicionales</h2>
-            <FactorList factors={data.factors} />
+            <FactorList factors={data.factors} home={data.home} />
           </article>
         </section>
 
@@ -198,25 +253,29 @@ export function MatchupPage() {
         </section>
 
         <footer className="footer">
-          <TeamLogo abbr={data.away.abbr} name={data.away.name} className="footer-logo" />
+          <TeamLogo abbr={data.away.abbr} name={data.away.name} className="footer-logo away" />
           <div className="footer-copy">
             <h2>Conclusión</h2>
             <p>{data.conclusion}</p>
           </div>
           <div className="footer-notes">
             <div>
-              Marcador proyectado: <b>Bears {data.scoreHome} - Falcons {data.scoreAway}</b> | Total esperado:{" "}
-              <b>{data.total} puntos</b>
+              Marcador proyectado:{" "}
+              <b>
+                {titleCase(data.home.name)} {data.scoreHome} - {titleCase(data.away.name)} {data.scoreAway}
+              </b>{" "}
+              | Total esperado: <b>{data.total} puntos</b>
             </div>
             <div>
-              Probabilidad de victoria: <b>Bears {data.winHome}%</b> | <b>Falcons {data.winAway}%</b>
+              Probabilidad de victoria: <b>{titleCase(data.home.name)} {data.winHome}%</b> |{" "}
+              <b>{titleCase(data.away.name)} {data.winAway}%</b>
             </div>
             <div>
-              Confianza del pronóstico: <b>6 / 10 (moderada)</b>
+              Confianza del pronóstico: <b>{data.confidence}</b>
             </div>
             <div>El resultado puede cambiar con el reporte definitivo de inactivos.</div>
           </div>
-          <img className="footer-logo bears" src="/bears-c.svg" alt={data.home.name} />
+          <FooterMark abbr={data.home.abbr} name={data.home.name} />
         </footer>
       </div>
     </main>
@@ -224,7 +283,22 @@ export function MatchupPage() {
 }
 
 function titleCase(name: string) {
-  return name.charAt(0) + name.slice(1).toLowerCase();
+  return name
+    .toLowerCase()
+    .split(" ")
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(" ");
+}
+
+function slateLabel(item: SlateGame) {
+  return `${titleCase(teamNickname(item.game.away.abbr))} vs ${titleCase(teamNickname(item.game.home.abbr))}`;
+}
+
+function FooterMark({ abbr, name }: { abbr: string; name: string }) {
+  if (abbr.toUpperCase() === "CHI") {
+    return <img className="footer-logo home bears" src="/bears-c.svg" alt={name} />;
+  }
+  return <TeamLogo abbr={abbr} name={name} className="footer-logo home" />;
 }
 
 function ScoreMark({ abbr, name }: { abbr: string; name: string }) {
@@ -282,9 +356,15 @@ function ScheduleCard({ side, tone }: { side: TeamSide; tone: "red" | "navy" }) 
           </tr>
         </thead>
         <tbody>
-          {side.schedule.map((row) => (
-            <ScheduleLine key={`${side.abbr}-${row.week}`} row={row} />
-          ))}
+          {side.schedule.length ? (
+            side.schedule.map((row) => <ScheduleLine key={`${side.abbr}-${row.week}-${row.oppAbbr}`} row={row} />)
+          ) : (
+            <tr>
+              <td className="sched-empty" colSpan={4}>
+                No encontrado
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
       <div className="rec-foot">
@@ -338,18 +418,20 @@ function CompareTable({ rows }: { rows: CompareRow[] }) {
   return (
     <div className="cmp">
       {rows.map((row) => {
-        const max = Math.max(row.away, row.home) || 1;
+        const known = [row.away, row.home].filter((value): value is number => value != null);
+        const max = Math.max(...known, 1);
+        const width = (value: number | null) => (value == null ? 0 : `${(value / max) * 100}%`);
         return (
           <div className="cmp-row" key={row.label}>
-            <span className="cmp-val away">{formatCompare(row.away, row)}</span>
+            <span className={`cmp-val away${row.away == null ? " missing" : ""}`}>{formatCompare(row.away, row)}</span>
             <span className="cmp-bar-slot away">
-              <i style={{ width: `${(row.away / max) * 100}%` }} />
+              {row.away != null && <i style={{ width: width(row.away) }} />}
             </span>
             <span className="cmp-label">{row.label}</span>
             <span className="cmp-bar-slot home">
-              <i style={{ width: `${(row.home / max) * 100}%` }} />
+              {row.home != null && <i style={{ width: width(row.home) }} />}
             </span>
-            <span className="cmp-val home">{formatCompare(row.home, row)}</span>
+            <span className={`cmp-val home${row.home == null ? " missing" : ""}`}>{formatCompare(row.home, row)}</span>
           </div>
         );
       })}
@@ -357,7 +439,10 @@ function CompareTable({ rows }: { rows: CompareRow[] }) {
   );
 }
 
-function RankBadge({ rank }: { rank: number }) {
+function RankBadge({ rank }: { rank: number | null }) {
+  if (rank == null) {
+    return <div className="rank-badge missing" aria-label="No encontrado" />;
+  }
   const good = rank <= 16;
   const fill = Math.min(0.96, Math.max(0.14, (33 - rank) / 32));
   const radius = 14;
@@ -393,7 +478,7 @@ function RankCard({ title, tone, stats }: { title: string; tone: "red" | "navy";
           <div key={stat.label}>
             <div className="lbl">{stat.label}</div>
             <RankBadge rank={stat.rank} />
-            <div className="rank-value">{stat.value}</div>
+            <div className={`rank-value${stat.rank == null ? " missing" : ""}`}>{stat.value}</div>
           </div>
         ))}
       </div>
@@ -423,9 +508,15 @@ function InjuryCard({ side, tone }: { side: TeamSide; tone: "red" | "navy" }) {
           </tr>
         </thead>
         <tbody>
-          {side.injuries.map((player) => (
-            <InjuryLine key={player.name} player={player} />
-          ))}
+          {side.injuries.length ? (
+            side.injuries.map((player) => <InjuryLine key={player.name} player={player} />)
+          ) : (
+            <tr>
+              <td className="inj-empty" colSpan={4}>
+                No encontrado
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </article>
@@ -433,6 +524,8 @@ function InjuryCard({ side, tone }: { side: TeamSide; tone: "red" | "navy" }) {
 }
 
 function InjuryLine({ player }: { player: Injury }) {
+  const rated = player.impact === "Alto" || player.impact === "Medio" || player.impact === "Bajo";
+  const tone = rated ? player.impact : player.impact === "No encontrado" ? "missing" : "note";
   return (
     <tr>
       <td className="player">
@@ -442,8 +535,8 @@ function InjuryLine({ player }: { player: Injury }) {
       <td className="pos">{player.pos}</td>
       <td className={`st-${player.status}`}>{player.status}</td>
       <td>
-        <span className={`impact ${player.impact}`}>
-          <Star size={12} fill="currentColor" stroke="currentColor" />
+        <span className={`impact ${tone}`} title={player.impact === "No encontrado" ? undefined : player.impact}>
+          {rated && <Star size={12} fill="currentColor" stroke="currentColor" />}
           {player.impact}
         </span>
       </td>
@@ -451,13 +544,16 @@ function InjuryLine({ player }: { player: Injury }) {
   );
 }
 
-function FactorMark({ icon }: { icon: Factor["icon"] }) {
-  if (icon === "pin") return <img className="factor-mark bears" src="/bears-c.svg" alt="" />;
+function FactorMark({ icon, abbr, name }: { icon: Factor["icon"]; abbr: string; name: string }) {
+  if (icon === "pin") {
+    if (abbr.toUpperCase() === "CHI") return <img className="factor-mark bears" src="/bears-c.svg" alt="" />;
+    return <TeamLogo abbr={abbr} name={name} className="factor-mark" />;
+  }
   if (icon === "weather") return <Sun className="factor-sun" size={16} strokeWidth={2.6} />;
   return <span className="factor-mark" />;
 }
 
-function FactorList({ factors }: { factors: Factor[] }) {
+function FactorList({ factors, home }: { factors: Factor[]; home: TeamSide }) {
   return (
     <div className="factors">
       {factors.map((factor) => {
@@ -468,7 +564,7 @@ function FactorList({ factors }: { factors: Factor[] }) {
               <Icon size={18} strokeWidth={1.8} />
             </span>
             <b>{factor.label}</b>
-            <FactorMark icon={factor.icon} />
+            <FactorMark icon={factor.icon} abbr={home.abbr} name={home.name} />
             {factor.bullets ? (
               <ul>
                 {factor.bullets.map((item) => (
