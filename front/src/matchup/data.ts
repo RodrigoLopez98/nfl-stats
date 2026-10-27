@@ -1,7 +1,7 @@
 import { api, type GameCard, type Rankings } from "@/api";
 import { currentNflSeason, parseCalendarDate, todayInMonterrey } from "@/lib/datetime";
 import { NFL_TEAMS } from "@/lib/nfl-teams";
-import { kickoffLabel } from "@/lib/scores-format";
+import { formatKickoffSanLuis } from "@/lib/scores-format";
 import { normalizeTeamAbbr, teamNickname } from "@/lib/team-meta";
 
 export type ScheduleRow = {
@@ -104,7 +104,7 @@ export const IMAGE_MATCHUP: MatchupData = {
   weekLabel: "X",
   confidence: "6 / 10 (moderada)",
   dateLine: "DOMINGO 18 OCT",
-  timeLine: "1:00 PM (ET)",
+  timeLine: "11:00 AM (SLP)",
   stadium: "Soldier Field, Chicago",
   winAway: 45,
   winHome: 55,
@@ -596,11 +596,10 @@ function lineText(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function formatTimeEt(game: GameCard) {
-  const raw = kickoffLabel(game);
-  const match = raw.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
-  if (!match) return "Horario por definir";
-  return `${match[1]}:${match[2]} ${match[3].toUpperCase()} (ET)`;
+function formatTimeSanLuis(game: GameCard) {
+  const label = formatKickoffSanLuis(game);
+  if (label === "Horario por definir") return label;
+  return `${label} (SLP)`;
 }
 
 function stadiumLine(game: GameCard, homeCity: string) {
@@ -953,7 +952,7 @@ function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | 
     gameId: game.game_id,
     weekLabel: String(week),
     dateLine: game.gameday ? formatKickoff(game.gameday) : "Fecha por definir",
-    timeLine: formatTimeEt(game),
+    timeLine: formatTimeSanLuis(game),
     stadium: stadiumLine(game, home.city),
     confidence: `${confidenceScore} / 10 (${confidenceWord})`,
     away,

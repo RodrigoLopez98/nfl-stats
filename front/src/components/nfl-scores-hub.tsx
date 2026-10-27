@@ -8,8 +8,8 @@ import {
   formatLongWeekdayDate,
   formatShortDate,
   groupGamesByDay,
+  formatKickoffSanLuis,
   isFinal,
-  kickoffLabel,
   parseGameday,
   recordLabel,
   sortCompletedGames,
@@ -110,7 +110,7 @@ function ScoreGameCard({ game }: { game: GameCard }) {
             <span>{formatShortDate(day)}</span>
           </span>
         ) : (
-          kickoffLabel(game)
+          formatKickoffSanLuis(game)
         )}
       </div>
     </div>
@@ -254,7 +254,7 @@ function EventsPanel({ games }: { games: GameCard[] }) {
                       {teamNickname(away)} @ {teamNickname(home)}
                     </span>
                     <span className="text-white/60">
-                      {final ? `${game.away_score}-${game.home_score} Final` : kickoffLabel(game)}
+                      {final ? `${game.away_score}-${game.home_score} Final` : formatKickoffSanLuis(game)}
                     </span>
                   </li>
                 );

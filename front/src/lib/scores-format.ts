@@ -2,9 +2,12 @@ import type { GameCard } from "@/api";
 
 import {
   calendarWeekday,
+  EASTERN_TIME_ZONE,
   formatCalendarDate,
+  formatClock,
   parseCalendarDate,
-  wallTimeInMonterreyToUtcMs,
+  SAN_LUIS_TIME_ZONE,
+  wallTimeToUtcMs,
 } from "@/lib/datetime";
 
 export function parseGameday(value: string | null | undefined) {
@@ -50,13 +53,27 @@ function parseKickoffLabel(label: string) {
   return { hour, minute };
 }
 
-/** Instantánea del kickoff en Monterrey (ms UTC). */
+/** Instantánea UTC del kickoff. La hora publicada es del Este. */
 export function gameKickoffMs(game: GameCard) {
   const ymd = game.gameday?.slice(0, 10);
   if (!ymd) return Number.POSITIVE_INFINITY;
-  const { hour, minute } = parseKickoffLabel(kickoffLabel(game));
-  const ms = wallTimeInMonterreyToUtcMs(ymd, hour, minute);
+  const label = kickoffLabel(game);
+  if (label === "TBD") {
+    const fallback = wallTimeToUtcMs(ymd, 23, 59, SAN_LUIS_TIME_ZONE);
+    return Number.isNaN(fallback) ? Number.POSITIVE_INFINITY : fallback;
+  }
+  const { hour, minute } = parseKickoffLabel(label);
+  const ms = wallTimeToUtcMs(ymd, hour, minute, EASTERN_TIME_ZONE);
   return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+/** Kickoff en hora de San Luis Potosí, por ejemplo "6:15 PM". */
+export function formatKickoffSanLuis(game: GameCard) {
+  const label = kickoffLabel(game);
+  if (label === "TBD") return "Horario por definir";
+  const ms = gameKickoffMs(game);
+  if (!Number.isFinite(ms)) return "Horario por definir";
+  return formatClock(ms, SAN_LUIS_TIME_ZONE) || "Horario por definir";
 }
 
 export function sortUpcomingGames(games: GameCard[], now = new Date()) {

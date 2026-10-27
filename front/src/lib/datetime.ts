@@ -1,5 +1,11 @@
-/** Zona horaria de la app (Monterrey, México). */
+/** Zona horaria de la app (centro de México, misma hora que San Luis Potosí). */
 export const APP_TIME_ZONE = "America/Monterrey";
+
+/** Kickoffs de la NFL se publican en hora del Este. */
+export const EASTERN_TIME_ZONE = "America/New_York";
+
+/** San Luis Potosí usa el horario del centro de México, sin horario de verano. */
+export const SAN_LUIS_TIME_ZONE = "America/Mexico_City";
 
 const ISO_HAS_OFFSET = /(?:[zZ]|[+-]\d{2}:\d{2})$/;
 
@@ -70,8 +76,8 @@ export function formatCalendarDate(
   return new Intl.DateTimeFormat(locale, { timeZone: APP_TIME_ZONE, ...options }).format(date);
 }
 
-/** Convierte hora local en Monterrey (24h) a timestamp UTC. */
-export function wallTimeInMonterreyToUtcMs(ymd: string, hour24: number, minute: number) {
+/** Convierte una hora de reloj en la zona indicada a timestamp UTC. */
+export function wallTimeToUtcMs(ymd: string, hour24: number, minute: number, timeZone: string) {
   const [y, mo, d] = ymd.split("-").map(Number);
   if (!y || !mo || !d) return Number.NaN;
   const anchor = parseCalendarDate(ymd)?.getTime() ?? Date.UTC(y, mo - 1, d, 12, 0, 0);
@@ -79,7 +85,7 @@ export function wallTimeInMonterreyToUtcMs(ymd: string, hour24: number, minute: 
     const candidate = anchor + delta;
     const parts = Object.fromEntries(
       new Intl.DateTimeFormat("en-US", {
-        timeZone: APP_TIME_ZONE,
+        timeZone,
         year: "numeric",
         month: "numeric",
         day: "numeric",
@@ -90,15 +96,36 @@ export function wallTimeInMonterreyToUtcMs(ymd: string, hour24: number, minute: 
         .formatToParts(new Date(candidate))
         .map((part) => [part.type, part.value]),
     );
+    const hour = Number(parts.hour);
     if (
       Number(parts.year) === y &&
       Number(parts.month) === mo &&
       Number(parts.day) === d &&
-      Number(parts.hour) === hour24 &&
+      (hour === hour24 || (hour === 24 && hour24 === 0)) &&
       Number(parts.minute) === minute
     ) {
       return candidate;
     }
   }
   return anchor;
+}
+
+/** Convierte hora local en Monterrey (24h) a timestamp UTC. */
+export function wallTimeInMonterreyToUtcMs(ymd: string, hour24: number, minute: number) {
+  return wallTimeToUtcMs(ymd, hour24, minute, APP_TIME_ZONE);
+}
+
+/** Hora de reloj en la zona indicada, por ejemplo "6:15 PM". */
+export function formatClock(ms: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(new Date(ms));
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  const period = parts.find((part) => part.type === "dayPeriod")?.value?.toUpperCase();
+  if (!hour || !minute || !period) return "";
+  return `${hour}:${minute} ${period}`;
 }
