@@ -24,9 +24,11 @@ SYSTEM = (
     "Esas dos últimas son la probabilidad de que la suma de los puntos quede por encima o por debajo de la línea de puntos. "
     "Si el marcador que proyectas suma menos que la línea, under_prob tiene que ser mayor que over_prob. "
     "Si suma más, over_prob tiene que ser mayor. Si no hay línea, usa 50 y 50. "
+    "Si el mensaje trae lecciones de partidos ya jugados, corrige ese sesgo en las probabilidades y el marcador. "
+    "No copies el resultado de un partido pasado como si fuera el de este. "
     "margin es una frase corta en español con el favorito y la diferencia, o 'Empate proyectado'."
 )
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "3"
 
 
 def _guard(game_id: str) -> threading.Lock:
@@ -148,7 +150,20 @@ def _row(game_id: str, digest: str, payload: dict) -> AiForecast:
     )
 
 
+def _with_lessons(db: Session, game_id: str, brief: str) -> str:
+    try:
+        from app.lessons import lesson_prompt
+
+        note = lesson_prompt(db, game_id)
+    except Exception:
+        note = ""
+    if not note:
+        return brief
+    return f"{brief}\n\n{note}"
+
+
 def forecast_game(db: Session, game_id: str, brief: str) -> AiForecast:
+    brief = _with_lessons(db, game_id, brief)
     digest = hashlib.sha256(f"{PROMPT_VERSION}\n{brief}".encode("utf-8")).hexdigest()
     with _guard(game_id):
         cached = db.get(AiForecast, game_id)

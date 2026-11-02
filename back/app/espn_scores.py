@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from itertools import product
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import or_, select
@@ -13,6 +16,12 @@ from sqlalchemy.orm import Session
 from app.models import Game
 
 ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+_fill_lock = threading.Lock()
+_filled_at = 0.0
+
+
+def _today() -> date:
+    return datetime.now(ZoneInfo("America/Mexico_City")).date()
 
 
 def _match_keys(abbr: str) -> set[str]:
@@ -96,9 +105,12 @@ def enrich_scores_from_espn(db: Session, season: int) -> int:
     for game in pending:
         by_day[game.gameday].append(game)
 
+    today = _today()
     updated = 0
     with httpx.Client(timeout=30.0) as client:
         for gameday, day_games in by_day.items():
+            if gameday > today:
+                continue
             try:
                 events = _fetch_scoreboard(client, gameday)
             except httpx.HTTPError:
@@ -121,3 +133,18 @@ def enrich_scores_from_espn(db: Session, season: int) -> int:
                 updated += 1
 
     return updated
+
+
+def fill_past_scores(db: Session, season: int) -> int:
+    """Guarda marcadores finales de días ya jugados. No repite la consulta en cada request."""
+    global _filled_at
+    if time.monotonic() - _filled_at < 90:
+        return 0
+    with _fill_lock:
+        if time.monotonic() - _filled_at < 90:
+            return 0
+        updated = enrich_scores_from_espn(db, season)
+        if updated:
+            db.commit()
+        _filled_at = time.monotonic()
+        return updated

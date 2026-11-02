@@ -368,6 +368,12 @@
   border-right: 3px solid #fff;
 }
 
+.prob-side.full,
+.prob-side.away.full,
+.prob-side.gone {
+  border-right: 0;
+}
+
 .prob-side.home {
   background: #0e2544;
 }
@@ -385,6 +391,8 @@
 }
 
 .prob-names span {
+  min-width: 0;
+  overflow: hidden;
   text-align: center;
   font-size: 13px;
   font-weight: 800;
@@ -2299,6 +2307,70 @@
     width: 42px;
     height: 42px;
     max-width: 42px;
+  }
+}
+
+.learn-card .card-h {
+  background: #142033;
+  padding: 9px 12px 8px;
+  letter-spacing: 0.08em;
+}
+
+.learn-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.4fr);
+  gap: 14px;
+  padding: 12px 14px 14px;
+}
+
+.learn-headline,
+.learn-pattern {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #1d2939;
+}
+
+.learn-pattern {
+  margin-top: 8px;
+  font-weight: 700;
+}
+
+.learn-misses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.learn-misses li {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.learn-week {
+  font-weight: 800;
+  color: #8e1220;
+}
+
+.learn-score {
+  margin-left: 6px;
+  font-weight: 800;
+}
+
+.learn-text {
+  display: block;
+  color: #475467;
+}
+
+@media (max-width: 800px) {
+  .learn-body {
+    grid-template-columns: 1fr;
   }
 }
 

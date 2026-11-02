@@ -1,4 +1,4 @@
-import { api, type GameCard, type Rankings } from "@/api";
+import { api, type GameCard, type Lessons, type Rankings } from "@/api";
 import { currentNflSeason, parseCalendarDate, todayInMonterrey } from "@/lib/datetime";
 import { NFL_TEAMS } from "@/lib/nfl-teams";
 import { formatKickoffSanLuis } from "@/lib/scores-format";
@@ -269,6 +269,7 @@ export type MatchupSlate = {
   games: SlateGame[];
   rankingsByWeek: Record<number, Rankings>;
   index: number;
+  lessons: Lessons | null;
 };
 
 type Rec = { w: number; l: number; t: number };
@@ -788,7 +789,12 @@ function confidenceLabel(score: number) {
   return "alta";
 }
 
-function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | undefined): MatchupData {
+function buildMatchup(
+  item: SlateGame,
+  games: SlateGame[],
+  rankings: Rankings | undefined,
+  lessons: Lessons | null = null,
+): MatchupData {
   const { game, week } = item;
   const allowed = pointsAllowedTable(games, item);
   const yards = offenseYards(rankings);
@@ -858,6 +864,12 @@ function buildMatchup(item: SlateGame, games: SlateGame[], rankings: Rankings | 
   if (weatherCut) {
     rawAway -= weatherCut / 2;
     rawHome -= weatherCut / 2;
+  }
+  const played = game.away_score != null && game.home_score != null;
+  if (lessons && lessons.graded >= 4 && !played) {
+    rawHome -= lessons.apply_margin;
+    rawAway -= lessons.apply_total / 2;
+    rawHome -= lessons.apply_total / 2;
   }
   const scoreAway = Math.max(6, Math.round(rawAway));
   const scoreHome = Math.max(6, Math.round(rawHome));
@@ -1033,7 +1045,10 @@ export async function loadMatchupSlate(): Promise<MatchupSlate | null> {
     const season = currentNflSeason();
     const status = await api.status(season);
     if (!status.weeks.length) return null;
-    const bundles = await Promise.all(status.weeks.map((week) => api.week(season, week)));
+    const [bundles, lessons] = await Promise.all([
+      Promise.all(status.weeks.map((week) => api.week(season, week))),
+      api.lessons(season).catch(() => null),
+    ]);
     const games: SlateGame[] = [];
     const rankingsByWeek: Record<number, Rankings> = {};
     for (const bundle of bundles) {
@@ -1044,7 +1059,7 @@ export async function loadMatchupSlate(): Promise<MatchupSlate | null> {
     const today = todayInMonterrey()?.toISOString().slice(0, 10) ?? "";
     const upcoming = games.findIndex((item) => (item.game.gameday ?? "") >= today);
     const index = upcoming >= 0 ? upcoming : Math.max(0, games.length - 1);
-    return { games, rankingsByWeek, index };
+    return { games, rankingsByWeek, index, lessons };
   } catch {
     return null;
   }
@@ -1053,7 +1068,7 @@ export async function loadMatchupSlate(): Promise<MatchupSlate | null> {
 export function matchupAt(slate: MatchupSlate, index: number) {
   const item = slate.games[index];
   if (!item) return cloneMatchup();
-  return buildMatchup(item, slate.games, slate.rankingsByWeek[item.week]);
+  return buildMatchup(item, slate.games, slate.rankingsByWeek[item.week], slate.lessons);
 }
 
 export function formatCompare(value: number | null, row: CompareRow) {

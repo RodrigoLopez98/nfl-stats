@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, CloudSun, Gauge, MapPin, Power, Star, Sun } from "lucide-react";
-import { api } from "@/api";
+import { api, type Lessons } from "@/api";
 import { TeamLogo } from "@/components/team-logo";
 import { teamNickname } from "@/lib/team-meta";
 import {
@@ -21,6 +21,37 @@ import {
   type TeamSide,
 } from "./data";
 import "./matchup.css";
+
+function LearnCard({ lessons }: { lessons: Lessons }) {
+  const pct = lessons.graded ? Math.round((lessons.hits / lessons.graded) * 100) : 0;
+  return (
+    <article className="card learn-card">
+      <h2 className="card-h">
+        Aprendizaje <span className="h-note">{lessons.hits}/{lessons.graded} ganadores · {pct}%</span>
+      </h2>
+      <div className="learn-body">
+        <div>
+          <p className="learn-headline">{lessons.headline}</p>
+          {lessons.pattern ? <p className="learn-pattern">{lessons.pattern}</p> : null}
+        </div>
+        {lessons.misses.length ? (
+          <ul className="learn-misses">
+            {lessons.misses.map((miss) => (
+              <li key={`${miss.week}-${miss.matchup}`}>
+                <span className="learn-week">S{miss.week}</span>
+                <span>
+                  <strong>{miss.matchup}</strong>
+                  <span className="learn-score">{miss.score}</span>
+                  <span className="learn-text">{miss.text}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </article>
+  );
+}
 
 const FACTOR_ICONS = {
   pin: MapPin,
@@ -55,6 +86,11 @@ export function MatchupPage() {
 
   useEffect(() => {
     if (!slate?.games.length) return;
+    const item = slate.games[index];
+    if (item && item.game.away_score != null && item.game.home_score != null) {
+      setForecast(null);
+      return;
+    }
     const current = matchupAt(slate, index);
     if (current.gameId === IMAGE_MATCHUP.gameId) return;
     const controller = new AbortController();
@@ -109,6 +145,18 @@ export function MatchupPage() {
 
   const awayPts = shown.away.quarters.reduce((sum, n) => sum + n, 0);
   const homePts = shown.home.quarters.reduce((sum, n) => sum + n, 0);
+  const finalGame = slate?.games[index]?.game;
+  const played = finalGame?.away_score != null && finalGame?.home_score != null;
+  const finalAway = finalGame?.away_score ?? 0;
+  const finalHome = finalGame?.home_score ?? 0;
+  const finalTotal = finalAway + finalHome;
+  const winnerSide = finalAway === finalHome ? "tie" : finalAway > finalHome ? "away" : "home";
+  const winnerName = winnerSide === "away" ? data.away.name : winnerSide === "home" ? data.home.name : "Empate";
+  const finalMargin = Math.abs(finalHome - finalAway);
+  const finalMarginText =
+    winnerSide === "tie" ? "Empate" : `${titleCase(winnerName)} por ${finalMargin} ${finalMargin === 1 ? "punto" : "puntos"}`;
+  const wentOver = played && data.hasLine && finalTotal > data.line;
+  const wentUnder = played && data.hasLine && finalTotal < data.line;
 
   return (
     <main className="mp">
@@ -147,64 +195,82 @@ export function MatchupPage() {
       </header>
       <div className="mp-board">
         <section className="cols-3">
-          <article className={`card prob-card${pending ? " ai-wait" : ""}`}>
-            <h2 className="card-h">Probabilidad de ganar</h2>
+          <article className={`card prob-card${played || !pending ? "" : " ai-wait"}`}>
+            <h2 className="card-h">{played ? "Equipo ganador" : "Probabilidad de ganar"}</h2>
             <div className="card-b">
               <div className="prob">
-                <div className="prob-side away" style={{ width: `${pick ? shown.winAway : 50}%` }}>
-                  <span className="pct">{pick ? `${shown.winAway}%` : failed ? "" : pending ? "…" : `${shown.winAway}%`}</span>
+                <div
+                  className={`prob-side away${played && winnerSide === "away" ? " full" : ""}${played && winnerSide === "home" ? " gone" : ""}`}
+                  style={{ width: played ? (winnerSide === "home" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winAway : 50}%` }}
+                >
+                  <span className="pct">
+                    {played ? (winnerSide === "away" ? data.away.name : "") : pick ? `${shown.winAway}%` : failed ? "" : pending ? "…" : `${shown.winAway}%`}
+                  </span>
                 </div>
-                <div className="prob-side home" style={{ width: `${pick ? shown.winHome : 50}%` }}>
-                  <span className="pct">{pick ? `${shown.winHome}%` : failed ? "" : pending ? "…" : `${shown.winHome}%`}</span>
+                <div
+                  className={`prob-side home${played && winnerSide === "home" ? " full" : ""}${played && winnerSide === "away" ? " gone" : ""}`}
+                  style={{ width: played ? (winnerSide === "away" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winHome : 50}%` }}
+                >
+                  <span className="pct">
+                    {played ? (winnerSide === "home" ? data.home.name : "") : pick ? `${shown.winHome}%` : failed ? "" : pending ? "…" : `${shown.winHome}%`}
+                  </span>
                 </div>
               </div>
               <div className="prob-names">
-                <span style={{ width: `${pick ? shown.winAway : 50}%` }}>{data.away.name}</span>
-                <span style={{ width: `${pick ? shown.winHome : 50}%` }}>{data.home.name}</span>
+                <span style={{ width: played ? (winnerSide === "home" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winAway : 50}%` }}>{data.away.name}</span>
+                <span style={{ width: played ? (winnerSide === "away" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winHome : 50}%` }}>{data.home.name}</span>
               </div>
-              <p className="prob-note">{pick ? "Fuente: IA" : failed ? "La IA no respondió" : pending ? "Consultando la IA" : "Estimación orientativa, sin modelo calibrado"}</p>
+              <p className="prob-note">
+                {played ? (winnerSide === "tie" ? "Empate" : "Resultado final") : pick ? "Fuente: IA" : failed ? "La IA no respondió" : pending ? "Consultando la IA" : "Estimación orientativa, sin modelo calibrado"}
+              </p>
             </div>
           </article>
 
-          <article className={`card score-card${pending ? " ai-wait" : ""}`}>
-            <h2 className="card-h">Marcador proyectado</h2>
+          <article className={`card score-card${played || !pending ? "" : " ai-wait"}`}>
+            <h2 className="card-h">{played ? "Marcador final" : "Marcador proyectado"}</h2>
             <div className="card-b">
               <div className="score-row">
                 <ScoreMark abbr={data.away.abbr} name={data.away.name} />
-                <span className="score-num">{pick ? shown.scoreAway : failed ? "" : pending ? "…" : shown.scoreAway}</span>
+                <span className="score-num">{played ? finalAway : pick ? shown.scoreAway : failed ? "" : pending ? "…" : shown.scoreAway}</span>
                 <span className="score-chip">
                   <span className="score-dash">-</span>
                 </span>
-                <span className="score-num">{pick ? shown.scoreHome : failed ? "" : pending ? "…" : shown.scoreHome}</span>
+                <span className="score-num">{played ? finalHome : pick ? shown.scoreHome : failed ? "" : pending ? "…" : shown.scoreHome}</span>
                 <ScoreMark abbr={data.home.abbr} name={data.home.name} />
               </div>
-              <p className="score-note">{pick ? shown.marginText : failed ? "La IA no respondió" : pending ? "Consultando la IA" : shown.marginText}</p>
+              <p className="score-note">{played ? finalMarginText : pick ? shown.marginText : failed ? "La IA no respondió" : pending ? "Consultando la IA" : shown.marginText}</p>
             </div>
           </article>
 
-          <article className={`card total-card${pending ? " ai-wait" : ""}`}>
-            <h2 className="card-h">Total de puntos proyectado</h2>
+          <article className={`card total-card${played || !pending ? "" : " ai-wait"}`}>
+            <h2 className="card-h">{played ? "Total de puntos" : "Total de puntos proyectado"}</h2>
             <div className="card-b">
               <div className="total-body">
                 <div className="total-main">
-                  <div className="total-num">{pick ? shown.total : failed ? "" : pending ? "…" : shown.total}</div>
+                  <div className="total-num">{played ? finalTotal : pick ? shown.total : failed ? "" : pending ? "…" : shown.total}</div>
                   <div className="total-line">{data.hasLine ? `Línea actual: ${data.line}` : ""}</div>
                 </div>
                 <span className="total-rule" aria-hidden="true" />
                 <div className="ou-wrap">
                   <div className="ou over">
                     <div className="lbl">{data.hasLine ? `Más de ${data.line}` : "Más"}</div>
-                    <div className={`pct${data.hasLine && pick ? "" : " missing"}`}>{pick && data.hasLine ? `${shown.overProb}%` : ""}</div>
+                    <div className={`pct${data.hasLine && (played ? wentOver : pick) ? "" : " missing"}`}>
+                      {played ? (wentOver ? "Final" : "") : pick && data.hasLine ? `${shown.overProb}%` : ""}
+                    </div>
                   </div>
                   <div className="ou under">
                     <div className="lbl">{data.hasLine ? `Menos de ${data.line}` : "Menos"}</div>
-                    <div className={`pct${data.hasLine && pick ? "" : " missing"}`}>{pick && data.hasLine ? `${shown.underProb}%` : ""}</div>
+                    <div className={`pct${data.hasLine && (played ? wentUnder : pick) ? "" : " missing"}`}>
+                      {played ? (wentUnder ? "Final" : "") : pick && data.hasLine ? `${shown.underProb}%` : ""}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </article>
         </section>
+
+        {slate?.lessons && slate.lessons.graded > 0 ? <LearnCard lessons={slate.lessons} /> : null}
 
         <section className="cols-3">
           <ScheduleCard side={data.away} tone="red" />
@@ -299,33 +365,41 @@ export function MatchupPage() {
           </div>
           <div className="footer-notes">
             <div>
-              Marcador proyectado:{" "}
+              {played ? "Marcador final" : "Marcador proyectado"}:{" "}
               <b>
-                {pick
-                  ? `${titleCase(shown.home.name)} ${shown.scoreHome} - ${titleCase(shown.away.name)} ${shown.scoreAway}`
-                  : pending
-                    ? "Consultando la IA"
-                    : `${titleCase(data.home.name)} ${data.scoreHome} - ${titleCase(data.away.name)} ${data.scoreAway}`}
+                {played
+                  ? `${titleCase(data.home.name)} ${finalHome} - ${titleCase(data.away.name)} ${finalAway}`
+                  : pick
+                    ? `${titleCase(shown.home.name)} ${shown.scoreHome} - ${titleCase(shown.away.name)} ${shown.scoreAway}`
+                    : pending
+                      ? "Consultando la IA"
+                      : `${titleCase(data.home.name)} ${data.scoreHome} - ${titleCase(data.away.name)} ${data.scoreAway}`}
               </b>{" "}
-              | Total esperado: <b>{pick ? `${shown.total} puntos` : pending ? "…" : `${data.total} puntos`}</b>
+              | {played ? "Total" : "Total esperado"}: <b>{played ? `${finalTotal} puntos` : pick ? `${shown.total} puntos` : pending ? "…" : `${data.total} puntos`}</b>
             </div>
             <div>
-              Probabilidad de victoria:{" "}
-              <b>
-                {pick
-                  ? `${titleCase(shown.home.name)} ${shown.winHome}%`
-                  : pending
-                    ? "…"
-                    : `${titleCase(data.home.name)} ${data.winHome}%`}
-              </b>{" "}
-              |{" "}
-              <b>
-                {pick
-                  ? `${titleCase(shown.away.name)} ${shown.winAway}%`
-                  : pending
-                    ? "…"
-                    : `${titleCase(data.away.name)} ${data.winAway}%`}
-              </b>
+              {played ? "Equipo ganador" : "Probabilidad de victoria"}:{" "}
+              {played ? (
+                <b>{titleCase(winnerName)}</b>
+              ) : (
+                <>
+                  <b>
+                    {pick
+                      ? `${titleCase(shown.home.name)} ${shown.winHome}%`
+                      : pending
+                        ? "…"
+                        : `${titleCase(data.home.name)} ${data.winHome}%`}
+                  </b>{" "}
+                  |{" "}
+                  <b>
+                    {pick
+                      ? `${titleCase(shown.away.name)} ${shown.winAway}%`
+                      : pending
+                        ? "…"
+                        : `${titleCase(data.away.name)} ${data.winAway}%`}
+                  </b>
+                </>
+              )}
             </div>
             <div>
               Confianza del pronóstico: <b>{data.confidence}</b>

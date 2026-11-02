@@ -165,3 +165,21 @@ class ForecastOut(BaseModel):
     over_prob: int
     under_prob: int
     margin: str
+
+
+class LessonMissOut(BaseModel):
+    week: int
+    matchup: str
+    text: str
+    score: str
+    source: str
+
+
+class LessonsOut(BaseModel):
+    graded: int
+    hits: int
+    apply_margin: float
+    apply_total: float
+    headline: str
+    pattern: str
+    misses: list[LessonMissOut]
