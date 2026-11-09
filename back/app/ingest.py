@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.enrich import enrich_injuries, enrich_schedule
+from app.enrich import clock_label, enrich_injuries, enrich_schedule
 from app.espn_scores import enrich_scores_from_espn
 from app.models import Game, SyncLog, TeamStat
 
@@ -123,6 +123,9 @@ def _upsert_games(db: Session, rows: list[dict]) -> int:
         game.week = int(row["week"])
         game.game_type = row.get("game_type") or "REG"
         game.gameday = _date(row.get("gameday"))
+        kickoff = clock_label(row.get("gametime"))
+        if kickoff:
+            game.gametime = kickoff
         game.home_team = home
         game.away_team = away
         away_score = _int(row.get("away_score"))

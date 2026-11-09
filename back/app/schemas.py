@@ -56,6 +56,7 @@ class InjuryOut(BaseModel):
 class GameOut(BaseModel):
     game_id: str
     gameday: date | None
+    gametime: str | None = None
     stadium: str | None = None
     away: SideOut
     home: SideOut

@@ -29,6 +29,8 @@ export type ReportInjury = {
 export type GameCard = {
   game_id: string;
   gameday: string | null;
+  /** Hora de reloj del Este, HH:MM. Vacío si el calendario aún no la trae. */
+  gametime?: string | null;
   stadium?: string | null;
   away: Side;
   home: Side;

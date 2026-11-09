@@ -14,6 +14,8 @@ class Game(Base):
     week: Mapped[int] = mapped_column(Integer, index=True)
     game_type: Mapped[str] = mapped_column(String(8), default="REG")
     gameday: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Hora de reloj del Este, HH:MM. El frente la convierte a San Luis Potosí.
+    gametime: Mapped[str | None] = mapped_column(String(8), nullable=True)
     home_team: Mapped[str] = mapped_column(String(8), index=True)
     away_team: Mapped[str] = mapped_column(String(8), index=True)
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)

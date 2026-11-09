@@ -1,7 +1,7 @@
 import { api, type GameCard, type Lessons, type Rankings } from "@/api";
 import { currentNflSeason, parseCalendarDate, todayInMonterrey } from "@/lib/datetime";
 import { NFL_TEAMS } from "@/lib/nfl-teams";
-import { formatKickoffSanLuis } from "@/lib/scores-format";
+import { formatKickoffDateSanLuis, formatKickoffSanLuis } from "@/lib/scores-format";
 import { normalizeTeamAbbr, teamNickname } from "@/lib/team-meta";
 
 export type ScheduleRow = {
@@ -96,7 +96,6 @@ export type MatchupData = {
   notes: string[];
 };
 
-const MONTHS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
 const MISSING = "No encontrado";
 
 export const IMAGE_MATCHUP: MatchupData = {
@@ -241,16 +240,6 @@ function cloneMatchup(): MatchupData {
 
 function formatRecord(side: GameCard["away"]) {
   return side.ties ? `${side.wins} - ${side.losses} - ${side.ties}` : `${side.wins} - ${side.losses}`;
-}
-
-function formatKickoff(ymd: string) {
-  const date = parseCalendarDate(ymd);
-  if (!date) return ymd;
-  const weekday = new Intl.DateTimeFormat("es-MX", { timeZone: "UTC", weekday: "long" })
-    .format(date)
-    .toUpperCase();
-  const day = date.getUTCDate();
-  return `${weekday} ${day} ${MONTHS[date.getUTCMonth()]}`;
 }
 
 function formatSpread(value: number) {
@@ -963,7 +952,7 @@ function buildMatchup(
   return {
     gameId: game.game_id,
     weekLabel: String(week),
-    dateLine: game.gameday ? formatKickoff(game.gameday) : "Fecha por definir",
+    dateLine: formatKickoffDateSanLuis(game),
     timeLine: formatTimeSanLuis(game),
     stadium: stadiumLine(game, home.city),
     confidence: `${confidenceScore} / 10 (${confidenceWord})`,

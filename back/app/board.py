@@ -209,6 +209,7 @@ def _build_board_from_snapshot(
             GameOut(
                 game_id=game.game_id,
                 gameday=game.gameday,
+                gametime=game.gametime,
                 stadium=game.stadium,
                 away=away,
                 home=home,

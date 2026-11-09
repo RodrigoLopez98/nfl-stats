@@ -14,7 +14,6 @@ import {
   type CompareRow,
   type Factor,
   type Injury,
-  type MatchupData,
   type MatchupSlate,
   type ScheduleRow,
   type SlateGame,
@@ -62,15 +61,19 @@ const FACTOR_ICONS = {
 } as const;
 
 export function MatchupPage() {
-  const [data, setData] = useState<MatchupData>(IMAGE_MATCHUP);
   const [slate, setSlate] = useState<MatchupSlate | null>(null);
   const [index, setIndex] = useState(0);
+  const [failed, setFailed] = useState(false);
   const [forecast, setForecast] = useState<{ gameId: string; status: "loading" | "ready" | "error"; pick?: AiPick } | null>(null);
 
   useEffect(() => {
     let cancel = false;
     loadMatchupSlate().then((next) => {
-      if (cancel || !next) return;
+      if (cancel) return;
+      if (!next?.games.length) {
+        setFailed(true);
+        return;
+      }
       setSlate(next);
       setIndex(next.index);
     });
@@ -78,11 +81,6 @@ export function MatchupPage() {
       cancel = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!slate?.games.length) return;
-    setData(matchupAt(slate, index));
-  }, [slate, index]);
 
   useEffect(() => {
     if (!slate?.games.length) return;
@@ -135,18 +133,23 @@ export function MatchupPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [slate]);
 
+  const data = slate?.games.length ? matchupAt(slate, index) : null;
   const totalGames = slate?.games.length ?? 0;
   const prevGame = slate?.games[index - 1];
   const nextGame = slate?.games[index + 1];
+  const finalGame = slate?.games[index]?.game;
+  const played = finalGame?.away_score != null && finalGame?.home_score != null;
+  const forecastSettled = Boolean(played || (forecast && forecast.gameId === data?.gameId && forecast.status !== "loading"));
+  if (!data || data.gameId === IMAGE_MATCHUP.gameId || !forecastSettled) {
+    return <DataBoot failed={failed} />;
+  }
   const pick = forecast?.status === "ready" && forecast.pick && forecast.gameId === data.gameId ? forecast.pick : null;
-  const failed = forecast?.status === "error" && forecast.gameId === data.gameId;
-  const pending = Boolean(slate) && data.gameId !== IMAGE_MATCHUP.gameId && !pick && !failed;
+  const aiFailed = forecast?.status === "error" && forecast.gameId === data.gameId;
+  const pending = Boolean(slate) && data.gameId !== IMAGE_MATCHUP.gameId && !pick && !aiFailed;
   const shown = pick ? applyAiForecast(data, pick) : data;
 
   const awayPts = shown.away.quarters.reduce((sum, n) => sum + n, 0);
   const homePts = shown.home.quarters.reduce((sum, n) => sum + n, 0);
-  const finalGame = slate?.games[index]?.game;
-  const played = finalGame?.away_score != null && finalGame?.home_score != null;
   const finalAway = finalGame?.away_score ?? 0;
   const finalHome = finalGame?.home_score ?? 0;
   const finalTotal = finalAway + finalHome;
@@ -176,8 +179,10 @@ export function MatchupPage() {
             </button>
             <div className="hero-switch-copy">
               <div className="week">SEMANA {data.weekLabel}</div>
-              <div className="date">{data.dateLine}</div>
-              <div className="time">{data.timeLine}</div>
+              <div className="kickoff">
+                <div className="date">{data.dateLine}</div>
+                <div className="time">{data.timeLine}</div>
+              </div>
               <div className="stadium">{data.stadium}</div>
             </div>
             <button
@@ -204,7 +209,7 @@ export function MatchupPage() {
                   style={{ width: played ? (winnerSide === "home" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winAway : 50}%` }}
                 >
                   <span className="pct">
-                    {played ? (winnerSide === "away" ? data.away.name : "") : pick ? `${shown.winAway}%` : failed ? "" : pending ? "…" : `${shown.winAway}%`}
+                    {played ? (winnerSide === "away" ? data.away.name : "") : pick ? `${shown.winAway}%` : aiFailed ? "" : pending ? "…" : `${shown.winAway}%`}
                   </span>
                 </div>
                 <div
@@ -212,7 +217,7 @@ export function MatchupPage() {
                   style={{ width: played ? (winnerSide === "away" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winHome : 50}%` }}
                 >
                   <span className="pct">
-                    {played ? (winnerSide === "home" ? data.home.name : "") : pick ? `${shown.winHome}%` : failed ? "" : pending ? "…" : `${shown.winHome}%`}
+                    {played ? (winnerSide === "home" ? data.home.name : "") : pick ? `${shown.winHome}%` : aiFailed ? "" : pending ? "…" : `${shown.winHome}%`}
                   </span>
                 </div>
               </div>
@@ -221,7 +226,7 @@ export function MatchupPage() {
                 <span style={{ width: played ? (winnerSide === "away" ? "0%" : winnerSide === "tie" ? "50%" : "100%") : `${pick ? shown.winHome : 50}%` }}>{data.home.name}</span>
               </div>
               <p className="prob-note">
-                {played ? (winnerSide === "tie" ? "Empate" : "Resultado final") : pick ? "Fuente: IA" : failed ? "La IA no respondió" : pending ? "Consultando la IA" : "Estimación orientativa, sin modelo calibrado"}
+                {played ? (winnerSide === "tie" ? "Empate" : "Resultado final") : pick ? "Fuente: IA" : aiFailed ? "La IA no respondió" : pending ? "Consultando la IA" : "Estimación orientativa, sin modelo calibrado"}
               </p>
             </div>
           </article>
@@ -231,14 +236,14 @@ export function MatchupPage() {
             <div className="card-b">
               <div className="score-row">
                 <ScoreMark abbr={data.away.abbr} name={data.away.name} />
-                <span className="score-num">{played ? finalAway : pick ? shown.scoreAway : failed ? "" : pending ? "…" : shown.scoreAway}</span>
+                <span className="score-num">{played ? finalAway : pick ? shown.scoreAway : aiFailed ? "" : pending ? "…" : shown.scoreAway}</span>
                 <span className="score-chip">
                   <span className="score-dash">-</span>
                 </span>
-                <span className="score-num">{played ? finalHome : pick ? shown.scoreHome : failed ? "" : pending ? "…" : shown.scoreHome}</span>
+                <span className="score-num">{played ? finalHome : pick ? shown.scoreHome : aiFailed ? "" : pending ? "…" : shown.scoreHome}</span>
                 <ScoreMark abbr={data.home.abbr} name={data.home.name} />
               </div>
-              <p className="score-note">{played ? finalMarginText : pick ? shown.marginText : failed ? "La IA no respondió" : pending ? "Consultando la IA" : shown.marginText}</p>
+              <p className="score-note">{played ? finalMarginText : pick ? shown.marginText : aiFailed ? "La IA no respondió" : pending ? "Consultando la IA" : shown.marginText}</p>
             </div>
           </article>
 
@@ -247,7 +252,7 @@ export function MatchupPage() {
             <div className="card-b">
               <div className="total-body">
                 <div className="total-main">
-                  <div className="total-num">{played ? finalTotal : pick ? shown.total : failed ? "" : pending ? "…" : shown.total}</div>
+                  <div className="total-num">{played ? finalTotal : pick ? shown.total : aiFailed ? "" : pending ? "…" : shown.total}</div>
                   <div className="total-line">{data.hasLine ? `Línea actual: ${data.line}` : ""}</div>
                 </div>
                 <span className="total-rule" aria-hidden="true" />
@@ -361,7 +366,7 @@ export function MatchupPage() {
           <TeamLogo abbr={data.away.abbr} name={data.away.name} className="footer-logo away" />
           <div className="footer-copy">
             <h2>Conclusión</h2>
-            <p>{pick ? shown.conclusion : failed ? "La IA no respondió para este partido." : pending ? "Consultando la IA para la probabilidad, el marcador y el total." : data.conclusion}</p>
+            <p>{pick ? shown.conclusion : aiFailed ? "La IA no respondió para este partido." : pending ? "Consultando la IA para la probabilidad, el marcador y el total." : data.conclusion}</p>
           </div>
           <div className="footer-notes">
             <div>
@@ -410,6 +415,22 @@ export function MatchupPage() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function DataBoot({ failed }: { failed: boolean }) {
+  return (
+    <div className="boot" role="status">
+      <img src="/nfl-logo.png" alt="" />
+      {failed ? (
+        <p>No se pudieron cargar los partidos.</p>
+      ) : (
+        <>
+          <span className="boot-spin" aria-hidden="true" />
+          <p>Cargando datos</p>
+        </>
+      )}
+    </div>
   );
 }
 

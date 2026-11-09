@@ -41,6 +41,22 @@ def _float(value: str | None) -> float | None:
     return float(value)
 
 
+def clock_label(value: str | None) -> str | None:
+    """Hora del Este publicada por nflverse, normalizada a HH:MM."""
+    text = str(value or "").strip()
+    if len(text) < 4 or ":" not in text:
+        return None
+    hour_text, minute_text = text.split(":", 1)
+    minute_text = minute_text[:2]
+    if not hour_text.isdigit() or not minute_text.isdigit():
+        return None
+    hour = int(hour_text)
+    minute = int(minute_text)
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 def enrich_schedule(db: Session, season: int) -> str:
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         response = client.get(SCHEDULES_URL)
@@ -68,6 +84,9 @@ def enrich_schedule(db: Session, season: int) -> str:
             game.temp = temp
         if wind is not None:
             game.wind = wind
+        kickoff = clock_label(row.get("gametime"))
+        if kickoff:
+            game.gametime = kickoff
         game.away_moneyline = _int(row.get("away_moneyline"))
         game.home_moneyline = _int(row.get("home_moneyline"))
         updated += 1

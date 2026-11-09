@@ -41,15 +41,15 @@ export function isFinal(game: GameCard) {
   return game.away_score != null && game.home_score != null;
 }
 
-function parseKickoffLabel(label: string) {
-  if (label === "TBD") return { hour: 23, minute: 59 };
-  const match = label.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
-  if (!match) return { hour: 12, minute: 0 };
-  let hour = Number(match[1]);
+const MONTHS_ES = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+
+/** Hora del Este publicada, por ejemplo "20:15". Sin hora inventada por día de la semana. */
+export function easternKickoff(game: GameCard) {
+  const match = game.gametime?.trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hour = Number(match[1]);
   const minute = Number(match[2]);
-  const meridiem = match[3].toLowerCase();
-  if (meridiem === "pm" && hour < 12) hour += 12;
-  if (meridiem === "am" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return null;
   return { hour, minute };
 }
 
@@ -57,23 +57,45 @@ function parseKickoffLabel(label: string) {
 export function gameKickoffMs(game: GameCard) {
   const ymd = game.gameday?.slice(0, 10);
   if (!ymd) return Number.POSITIVE_INFINITY;
-  const label = kickoffLabel(game);
-  if (label === "TBD") {
+  const clock = easternKickoff(game);
+  if (!clock) {
     const fallback = wallTimeToUtcMs(ymd, 23, 59, SAN_LUIS_TIME_ZONE);
     return Number.isNaN(fallback) ? Number.POSITIVE_INFINITY : fallback;
   }
-  const { hour, minute } = parseKickoffLabel(label);
-  const ms = wallTimeToUtcMs(ymd, hour, minute, EASTERN_TIME_ZONE);
+  const ms = wallTimeToUtcMs(ymd, clock.hour, clock.minute, EASTERN_TIME_ZONE);
   return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
 }
 
 /** Kickoff en hora de San Luis Potosí, por ejemplo "6:15 PM". */
 export function formatKickoffSanLuis(game: GameCard) {
-  const label = kickoffLabel(game);
-  if (label === "TBD") return "Horario por definir";
+  if (!easternKickoff(game)) return "Horario por definir";
   const ms = gameKickoffMs(game);
   if (!Number.isFinite(ms)) return "Horario por definir";
   return formatClock(ms, SAN_LUIS_TIME_ZONE) || "Horario por definir";
+}
+
+/** Día del kickoff en San Luis Potosí, por ejemplo "DOMINGO 9 NOV". */
+export function formatKickoffDateSanLuis(game: GameCard) {
+  const ymd = game.gameday?.slice(0, 10);
+  if (!ymd) return "Fecha por definir";
+  const clock = easternKickoff(game);
+  const ms = clock ? gameKickoffMs(game) : Number.NaN;
+  const date = Number.isFinite(ms) ? new Date(ms) : parseCalendarDate(ymd);
+  if (!date) return "Fecha por definir";
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("es-MX", {
+      timeZone: clock ? SAN_LUIS_TIME_ZONE : "UTC",
+      weekday: "long",
+      day: "numeric",
+      month: "numeric",
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  );
+  const weekday = (parts.weekday ?? "").toUpperCase();
+  const month = MONTHS_ES[(Number(parts.month) || 1) - 1] ?? "";
+  if (!weekday || !parts.day || !month) return "Fecha por definir";
+  return `${weekday} ${parts.day} ${month}`;
 }
 
 export function sortUpcomingGames(games: GameCard[], now = new Date()) {
@@ -111,16 +133,6 @@ export function broadcastEventTitle(date: Date) {
   if (day === 1) return "Monday Night Football";
   if (day === 0) return "Sunday Night Football";
   return "NFL Football";
-}
-
-export function kickoffLabel(game: GameCard) {
-  const date = parseGameday(game.gameday);
-  if (!date) return "TBD";
-  const day = calendarWeekday(date);
-  if (day === 4) return "8:15pm";
-  if (day === 1) return "6:15pm";
-  if (day === 0) return "1:00pm";
-  return "TBD";
 }
 
 export function recordLabel(wins: number, losses: number, ties: number) {
