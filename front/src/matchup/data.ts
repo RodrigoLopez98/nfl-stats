@@ -568,18 +568,52 @@ function marketEdge(model: number, odds: number | null | undefined) {
   return { text: "Neutral", tone: "muted" as const };
 }
 
-function splitQuarters(total: number): [number, number, number, number] {
-  const weights = [0.22, 0.27, 0.24, 0.27];
-  const raw = weights.map((weight) => Math.floor(total * weight));
-  let remainder = total - raw.reduce((sum, value) => sum + value, 0);
-  const order = [1, 3, 2, 0];
-  let cursor = 0;
-  while (remainder > 0) {
-    raw[order[cursor % order.length]] += 1;
-    remainder -= 1;
-    cursor += 1;
+/** Anotaciones reales: gol de campo 3, touchdown sin extra 6, con punto extra 7, con conversión de dos 8. */
+function scoringPlays(total: number): number[] {
+  const points = Math.max(0, Math.round(total));
+  if (points === 0) return [];
+  const plays: number[] = [];
+  let left = points;
+  while (left >= 7) {
+    plays.push(7);
+    left -= 7;
   }
-  return [raw[0], raw[1], raw[2], raw[3]];
+  const swapTouchdown = () => {
+    const index = plays.lastIndexOf(7);
+    if (index < 0) return false;
+    plays.splice(index, 1);
+    return true;
+  };
+  if (left === 0) return plays;
+  if (left === 3 || left === 6) return [...plays, left];
+  if (left === 1 && swapTouchdown()) return [...plays, 8];
+  if (left === 2 && swapTouchdown()) return [...plays, 6, 3];
+  if (left === 4 && swapTouchdown()) return [...plays, 8, 3];
+  if (left === 5 && swapTouchdown()) return [...plays, 6, 3, 3];
+  while (left >= 3) {
+    plays.push(3);
+    left -= 3;
+  }
+  return plays;
+}
+
+function splitQuarters(total: number): [number, number, number, number] {
+  const plays = scoringPlays(total).sort((a, b) => b - a);
+  const weights = [0.22, 0.27, 0.24, 0.27];
+  const quarters: [number, number, number, number] = [0, 0, 0, 0];
+  for (const play of plays) {
+    let slot = 0;
+    let gap = -Infinity;
+    for (let index = 0; index < quarters.length; index += 1) {
+      const room = total * weights[index] - quarters[index];
+      if (room > gap) {
+        gap = room;
+        slot = index;
+      }
+    }
+    quarters[slot] += play;
+  }
+  return quarters;
 }
 
 function lineText(value: number) {
